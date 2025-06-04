@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"task-orchestrator/config"
 	"task-orchestrator/errors"
+	"task-orchestrator/logger"
 	tasks "task-orchestrator/tasks"
 	"time"
 )
@@ -22,7 +23,7 @@ type HealthResponse struct {
 }
 
 // NewHealthHandler returns a health check handler
-func NewHealthHandler(cfg *config.Config, registry *tasks.HandlerRegistry) http.HandlerFunc {
+func NewHealthHandler(cfg *config.Config, registry *tasks.HandlerRegistry, lg *logger.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -42,7 +43,7 @@ func NewHealthHandler(cfg *config.Config, registry *tasks.HandlerRegistry) http.
 		w.WriteHeader(http.StatusOK)
 		err := json.NewEncoder(w).Encode(response)
 		if err != nil {
-			respondWithError(w, errors.NewInternalError("failed to encode response"), cfg.Logger)
+			respondWithError(w, errors.NewInternalError("failed to encode response"), lg)
 		}
 	}
 }

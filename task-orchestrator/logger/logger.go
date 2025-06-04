@@ -149,7 +149,7 @@ func (l *Logger) HTTP(method, path string, statusCode int, duration time.Duratio
 		"http_method": method,
 		"http_path":   path,
 		"http_status": statusCode,
-		"duration_us": duration.Microseconds(),
+		"duration_ns": duration.Nanoseconds(),
 		"type":        "http_request",
 	}
 

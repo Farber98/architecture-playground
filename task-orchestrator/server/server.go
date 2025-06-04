@@ -19,7 +19,7 @@ type Server struct {
 }
 
 // New creates a new server with the given handler and configuration
-func New(handler http.Handler, cfg *config.Config) *Server {
+func New(handler http.Handler, cfg *config.Config, lg *logger.Logger) *Server {
 	return &Server{
 		httpServer: &http.Server{
 			Addr:         cfg.Address(),
@@ -29,7 +29,7 @@ func New(handler http.Handler, cfg *config.Config) *Server {
 			IdleTimeout:  60 * time.Second,
 		},
 		config: cfg,
-		logger: cfg.Logger,
+		logger: lg,
 	}
 }
 

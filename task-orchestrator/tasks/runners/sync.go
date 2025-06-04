@@ -25,7 +25,7 @@ func (r *SynchronousRunner) Run(task *tasks.Task) error {
 	elapsed := time.Now()
 	defer func() {
 		r.logger.Task(task.ID, "task completed", map[string]any{
-			"duration_us": time.Since(elapsed).Microseconds(),
+			"duration_ns": time.Since(elapsed).Nanoseconds(),
 			"status":      task.Status,
 			"result":      task.Result,
 		})

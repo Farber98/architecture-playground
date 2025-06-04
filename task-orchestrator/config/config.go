@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"task-orchestrator/logger"
 	"time"
 )
 
@@ -15,8 +14,6 @@ type Config struct {
 	LogLevel        string        `json:"log_level"`
 	ShutdownTimeout time.Duration `json:"shutdown_timeout"`
 	Version         string        `json:"version"`
-
-	Logger *logger.Logger `json:"-"`
 }
 
 // LoadConfig loads configuration from environment variables with sensible defaults
