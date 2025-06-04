@@ -13,17 +13,22 @@ import (
 // and logs lifecycle events such as start, duration, and result.
 type SynchronousRunner struct {
 	registry *tasks.HandlerRegistry
+	logger   *logger.Logger
 }
 
 // NewSynchronousRunner constructs a new SynchronousRunner with a handler registry.
-func NewSynchronousRunner(r *tasks.HandlerRegistry) *SynchronousRunner {
-	return &SynchronousRunner{registry: r}
+func NewSynchronousRunner(r *tasks.HandlerRegistry, lg *logger.Logger) *SynchronousRunner {
+	return &SynchronousRunner{registry: r, logger: lg}
 }
 
 func (r *SynchronousRunner) Run(task *tasks.Task) error {
 	elapsed := time.Now()
 	defer func() {
-		logger.Taskf(task.ID, "task completed in %s: status=%s, result=%s", time.Since(elapsed), task.Status, task.Result)
+		r.logger.Task(task.ID, "task completed", map[string]any{
+			"duration_us": time.Since(elapsed).Microseconds(),
+			"status":      task.Status,
+			"result":      task.Result,
+		})
 	}()
 
 	handler, ok := r.registry.Get(task.Type)
@@ -33,7 +38,9 @@ func (r *SynchronousRunner) Run(task *tasks.Task) error {
 		return errors.NewNotFoundError("no handler registered for task type: " + task.Type)
 	}
 
-	logger.Taskf(task.ID, "starting task of type %q", task.Type)
+	r.logger.Task(task.ID, "starting task", map[string]any{
+		"task_type": task.Type,
+	})
 
 	if err := handler.Run(task); err != nil {
 		task.Status = "failed"

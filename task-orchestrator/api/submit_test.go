@@ -1,4 +1,4 @@
-package api_test
+package api
 
 import (
 	"bytes"
@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"task-orchestrator/api"
+	"strings"
+	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
 	"task-orchestrator/tasks/handlers"
 	"task-orchestrator/tasks/runners"
@@ -17,10 +18,14 @@ import (
 )
 
 func TestSubmitHandler_Print_Success(t *testing.T) {
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
 	reg := tasks.NewRegistry()
-	reg.Register("print", &handlers.PrintHandler{})
-	runner := runners.NewSynchronousRunner(reg)
-	handler := api.NewSubmitHandler(runner)
+	reg.Register("print", handlers.NewPrintHandler(testLogger))
+	runner := runners.NewSynchronousRunner(reg, testLogger)
+	handler := NewSubmitHandler(runner, testLogger)
 
 	body := []byte(`{"type":"print","payload":{"message":"Hello from HTTP"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/submit", bytes.NewReader(body))
@@ -31,7 +36,7 @@ func TestSubmitHandler_Print_Success(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rr.Code)
 
-	var resp api.SubmitResponse
+	var resp SubmitResponse
 	err := json.NewDecoder(rr.Body).Decode(&resp)
 	require.NoError(t, err)
 
@@ -41,8 +46,12 @@ func TestSubmitHandler_Print_Success(t *testing.T) {
 }
 
 func TestSubmitHandler_InvalidJSON(t *testing.T) {
-	runner := runners.NewSynchronousRunner(tasks.NewRegistry())
-	handler := api.NewSubmitHandler(runner)
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
+	runner := runners.NewSynchronousRunner(tasks.NewRegistry(), testLogger)
+	handler := NewSubmitHandler(runner, testLogger)
 
 	body := []byte(`{"type":"print","payload":{`) // malformed
 	req := httptest.NewRequest(http.MethodPost, "/submit", bytes.NewReader(body))
@@ -53,7 +62,7 @@ func TestSubmitHandler_InvalidJSON(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
-	var errorResp api.ErrorResponse
+	var errorResp errorResponse
 	err := json.NewDecoder(rr.Body).Decode(&errorResp)
 	require.NoError(t, err)
 
@@ -62,8 +71,12 @@ func TestSubmitHandler_InvalidJSON(t *testing.T) {
 }
 
 func TestSubmitHandler_UnknownTaskType(t *testing.T) {
-	runner := runners.NewSynchronousRunner(tasks.NewRegistry())
-	handler := api.NewSubmitHandler(runner)
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
+	runner := runners.NewSynchronousRunner(tasks.NewRegistry(), testLogger)
+	handler := NewSubmitHandler(runner, testLogger)
 
 	body := []byte(`{"type":"unknown","payload":{}}`)
 	req := httptest.NewRequest(http.MethodPost, "/submit", bytes.NewReader(body))
@@ -75,7 +88,7 @@ func TestSubmitHandler_UnknownTaskType(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rr.Code)
 
 	// Parse the structured error response
-	var errorResp api.ErrorResponse
+	var errorResp errorResponse
 	err := json.NewDecoder(rr.Body).Decode(&errorResp)
 	require.NoError(t, err)
 
@@ -84,8 +97,12 @@ func TestSubmitHandler_UnknownTaskType(t *testing.T) {
 }
 
 func TestSubmitHandler_MissingTaskType(t *testing.T) {
-	runner := runners.NewSynchronousRunner(tasks.NewRegistry())
-	handler := api.NewSubmitHandler(runner)
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
+	runner := runners.NewSynchronousRunner(tasks.NewRegistry(), testLogger)
+	handler := NewSubmitHandler(runner, testLogger)
 
 	body := []byte(`{"payload":{"message":"hello"}}`) // missing type field
 	req := httptest.NewRequest(http.MethodPost, "/submit", bytes.NewReader(body))
@@ -96,7 +113,7 @@ func TestSubmitHandler_MissingTaskType(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
-	var errorResp api.ErrorResponse
+	var errorResp errorResponse
 	err := json.NewDecoder(rr.Body).Decode(&errorResp)
 	require.NoError(t, err)
 
@@ -105,7 +122,11 @@ func TestSubmitHandler_MissingTaskType(t *testing.T) {
 }
 
 func TestSubmitHandler_MethodNotAllowed(t *testing.T) {
-	handler := api.NewSubmitHandler(nil)
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
+	handler := NewSubmitHandler(nil, testLogger)
 
 	req := httptest.NewRequest(http.MethodGet, "/submit", nil)
 	rr := httptest.NewRecorder()
@@ -114,7 +135,7 @@ func TestSubmitHandler_MethodNotAllowed(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
-	var errorResp api.ErrorResponse
+	var errorResp errorResponse
 	err := json.NewDecoder(rr.Body).Decode(&errorResp)
 	require.NoError(t, err)
 
@@ -123,10 +144,14 @@ func TestSubmitHandler_MethodNotAllowed(t *testing.T) {
 }
 
 func TestSubmitHandler_TaskHandlerValidationError(t *testing.T) {
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
 	reg := tasks.NewRegistry()
-	reg.Register("sleep", handlers.NewSleepHandler())
-	runner := runners.NewSynchronousRunner(reg)
-	handler := api.NewSubmitHandler(runner)
+	reg.Register("sleep", handlers.NewSleepHandler(testLogger))
+	runner := runners.NewSynchronousRunner(reg, testLogger)
+	handler := NewSubmitHandler(runner, testLogger)
 
 	// Send invalid sleep payload (negative seconds)
 	body := []byte(`{"type":"sleep","payload":{"seconds":-1}}`)
@@ -138,7 +163,7 @@ func TestSubmitHandler_TaskHandlerValidationError(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
-	var errorResp api.ErrorResponse
+	var errorResp errorResponse
 	err := json.NewDecoder(rr.Body).Decode(&errorResp)
 	require.NoError(t, err)
 
@@ -149,6 +174,114 @@ func TestSubmitHandler_TaskHandlerValidationError(t *testing.T) {
 	assert.Assert(t, errorResp.Details != nil)
 	assert.Assert(t, errorResp.Details["task_id"] != nil)
 	assert.Equal(t, -1.0, errorResp.Details["seconds"]) // JSON numbers are float64
+}
+
+func TestSubmitHandler_PayloadTooLarge(t *testing.T) {
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
+	runner := runners.NewSynchronousRunner(tasks.NewRegistry(), testLogger)
+	handler := NewSubmitHandler(runner, testLogger)
+
+	// Create a payload larger than 100KB (100 * 1024 bytes)
+	largePayload := strings.Repeat("a", 101*1024) // 101KB
+
+	// Create a valid JSON payload that's too large
+	payloadJSON := fmt.Sprintf(`{"message":"%s"}`, largePayload)
+	reqBody := submitRequest{
+		Type:    "test",
+		Payload: json.RawMessage(payloadJSON),
+	}
+
+	body, err := json.Marshal(reqBody)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/submit", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	var errorResp errorResponse
+	err = json.NewDecoder(rr.Body).Decode(&errorResp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "validation", errorResp.Type)
+	assert.Equal(t, "task payload too large", errorResp.Error)
+	assert.Equal(t, float64(100*1024), errorResp.Details["max_size_bytes"])
+	assert.Equal(t, float64(len(payloadJSON)), errorResp.Details["actual_size_bytes"])
+}
+
+func TestSubmitHandler_TaskTypeTooLong(t *testing.T) {
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
+	runner := runners.NewSynchronousRunner(tasks.NewRegistry(), testLogger)
+	handler := NewSubmitHandler(runner, testLogger)
+
+	// Create a task type longer than 50 characters
+	longTaskType := strings.Repeat("a", 51) // 51 characters
+
+	reqBody := submitRequest{
+		Type:    longTaskType,
+		Payload: json.RawMessage(`{"message":"test"}`),
+	}
+
+	body, err := json.Marshal(reqBody)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/submit", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	var errorResp errorResponse
+	err = json.NewDecoder(rr.Body).Decode(&errorResp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "validation", errorResp.Type)
+	assert.Equal(t, "task type too long", errorResp.Error)
+	assert.Equal(t, float64(50), errorResp.Details["max_length"])
+	assert.Equal(t, float64(51), errorResp.Details["actual_length"])
+}
+
+func TestSubmitHandler_RequestBodyTooLarge(t *testing.T) {
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
+	runner := runners.NewSynchronousRunner(tasks.NewRegistry(), testLogger)
+	handler := NewSubmitHandler(runner, testLogger)
+
+	// Create a request body larger than 1MB
+	// We'll create a very large payload that makes the entire request > 1MB
+	largeMessage := strings.Repeat("x", 1024*1024) // 1MB of 'x' characters
+
+	// This will create a JSON payload that exceeds 1MB when marshaled
+	reqBody := fmt.Sprintf(`{"type":"test","payload":{"message":"%s"}}`, largeMessage)
+
+	req := httptest.NewRequest(http.MethodPost, "/submit", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	var errorResp errorResponse
+	err := json.NewDecoder(rr.Body).Decode(&errorResp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "validation", errorResp.Type)
+	assert.Equal(t, "request body too large", errorResp.Error)
+	assert.Equal(t, float64(1024*1024), errorResp.Details["max_size_bytes"]) // 1MB
 }
 
 // erroringResponseWriter simulates a failure when writing to the client.
@@ -165,10 +298,14 @@ func (erroringResponseWriter) Write([]byte) (int, error) {
 func (erroringResponseWriter) WriteHeader(statusCode int) {}
 
 func TestSubmitHandler_ResponseEncodingFailure(t *testing.T) {
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
 	reg := tasks.NewRegistry()
-	reg.Register("print", &handlers.PrintHandler{})
-	runner := runners.NewSynchronousRunner(reg)
-	handler := api.NewSubmitHandler(runner)
+	reg.Register("print", handlers.NewPrintHandler(testLogger))
+	runner := runners.NewSynchronousRunner(reg, testLogger)
+	handler := NewSubmitHandler(runner, testLogger)
 
 	body := []byte(`{"type":"print","payload":{"message":"simulate write failure"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/submit", bytes.NewReader(body))
@@ -180,4 +317,39 @@ func TestSubmitHandler_ResponseEncodingFailure(t *testing.T) {
 	// We don't assert on output — we're just ensuring it doesn't panic
 	// If we had a pluggable logger, we could assert it was called
 	handler.ServeHTTP(w, req)
+}
+
+// UnknownErrorHandler is a test handler that returns a non-TaskError
+type UnknownErrorHandler struct{}
+
+func (u *UnknownErrorHandler) Run(task *tasks.Task) error {
+	// Return a generic error that's not a TaskError
+	return fmt.Errorf("generic error")
+}
+
+func TestSubmitHandler_UnknownErrorWrappedAsExecutionError(t *testing.T) {
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
+	reg := tasks.NewRegistry()
+	reg.Register("unknown-error", &UnknownErrorHandler{})
+	runner := runners.NewSynchronousRunner(reg, testLogger)
+	handler := NewSubmitHandler(runner, testLogger)
+
+	body := []byte(`{"type":"unknown-error","payload":{"test":"data"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/submit", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusUnprocessableEntity, rr.Code)
+
+	var errorResp errorResponse
+	err := json.NewDecoder(rr.Body).Decode(&errorResp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "execution", errorResp.Type)
+	assert.Equal(t, "task execution failed", errorResp.Error)
 }

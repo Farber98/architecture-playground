@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
+	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
 	"testing"
 	"time"
@@ -13,11 +15,11 @@ import (
 // FakeSleeper is a test double for Sleeper.
 // It records the sleep duration without actually pausing execution.
 // NOTE: This type should only be used in test code.
-type FakeSleeper struct {
+type fakeSleeper struct {
 	CalledWith time.Duration
 }
 
-func (f *FakeSleeper) Sleep(d time.Duration) {
+func (f *fakeSleeper) Sleep(d time.Duration) {
 	f.CalledWith = d
 }
 
@@ -110,10 +112,13 @@ func TestSleepHandler_Run(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create fake sleeper and inject it into handler
-			fakeSleeper := &FakeSleeper{}
+			// Create test logger and fake sleeper
+			var buf bytes.Buffer
+			testLogger := logger.New("DEBUG", &buf)
+			fakeSleeper := &fakeSleeper{}
 			handler := &SleepHandler{
-				Sleeper: fakeSleeper,
+				sleeper: fakeSleeper,
+				logger:  testLogger,
 			}
 
 			task := &tasks.Task{
@@ -140,6 +145,11 @@ func TestSleepHandler_Run(t *testing.T) {
 				if tt.wantSleepCalled {
 					assert.Equal(t, tt.wantSleepDuration, fakeSleeper.CalledWith)
 				}
+
+				// Verify logger was called
+				logOutput := buf.String()
+				assert.Assert(t, len(logOutput) > 0, "Expected log output")
+				assert.Assert(t, bytes.Contains(buf.Bytes(), []byte("test-id")), "Log should contain task ID")
 			}
 		})
 	}

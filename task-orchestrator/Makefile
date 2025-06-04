@@ -17,4 +17,11 @@ test-sleep:
 test-health:
 	curl -X GET http://localhost:8080/health
 
-.PHONY: test run test-print test-sleep test-health
+test-load:
+	@for i in $$(seq 1 100); do \
+        curl -X POST http://localhost:8080/submit \
+          -H "Content-Type: application/json" \
+          -d "{\"type\": \"print\", \"payload\": {\"message\": \"Load test $$i\"}}" & \
+    done; wait
+
+.PHONY: test run test-print test-sleep test-health load-test

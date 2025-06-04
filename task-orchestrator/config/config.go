@@ -4,16 +4,19 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"task-orchestrator/logger"
 	"time"
 )
 
 // Config holds all application configuration
 type Config struct {
 	ServerPort      int           `json:"server_port"`
-	LogLevel        string        `json:"log_level"`
 	TaskTimeout     time.Duration `json:"task_timeout"`
+	LogLevel        string        `json:"log_level"`
 	ShutdownTimeout time.Duration `json:"shutdown_timeout"`
 	Version         string        `json:"version"`
+
+	Logger *logger.Logger `json:"-"`
 }
 
 // LoadConfig loads configuration from environment variables with sensible defaults

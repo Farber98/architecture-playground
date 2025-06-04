@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
+	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
 	"testing"
 
@@ -10,7 +12,11 @@ import (
 )
 
 func TestPrintHandler_Run(t *testing.T) {
-	handler := &PrintHandler{}
+	// Create a test logger that captures output
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
+	handler := &PrintHandler{logger: testLogger}
 
 	tests := []struct {
 		name            string
@@ -86,6 +92,9 @@ func TestPrintHandler_Run(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Reset buffer for each test
+			buf.Reset()
+
 			task := &tasks.Task{
 				ID:      "test-id",
 				Type:    "print",
@@ -103,6 +112,11 @@ func TestPrintHandler_Run(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, tt.wantStatus, task.Status)
 				assert.Equal(t, tt.wantResult, task.Result)
+
+				// Verify logger was called (optional verification)
+				logOutput := buf.String()
+				assert.Assert(t, len(logOutput) > 0, "Expected log output")
+				assert.Assert(t, bytes.Contains(buf.Bytes(), []byte("test-id")), "Log should contain task ID")
 			}
 		})
 	}

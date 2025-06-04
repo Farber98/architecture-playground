@@ -15,6 +15,7 @@ import (
 type Server struct {
 	httpServer *http.Server
 	config     *config.Config
+	logger     *logger.Logger
 }
 
 // New creates a new server with the given handler and configuration
@@ -25,8 +26,10 @@ func New(handler http.Handler, cfg *config.Config) *Server {
 			Handler:      handler,
 			ReadTimeout:  15 * time.Second,
 			WriteTimeout: 15 * time.Second,
+			IdleTimeout:  60 * time.Second,
 		},
 		config: cfg,
+		logger: cfg.Logger,
 	}
 }
 
@@ -38,15 +41,20 @@ func (s *Server) Start() error {
 
 	// Start server in a goroutine
 	go func() {
-		logger.Infof("server starting on %s", s.config.Address())
+		s.logger.Info("Server starting", map[string]any{
+			"address": s.config.Address(),
+		})
+
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Errorf("server failed to start: %v", err)
+			s.logger.Error("Server failed to start", map[string]any{
+				"error": err.Error(),
+			})
 		}
 	}()
 
 	// Wait for interrupt signal
 	<-stop
-	logger.Infof("shutting down server...")
+	s.logger.Info("Shutting down server")
 
 	return s.shutdown()
 }
@@ -59,10 +67,13 @@ func (s *Server) shutdown() error {
 
 	// Attempt graceful shutdown
 	if err := s.httpServer.Shutdown(ctx); err != nil {
-		logger.Errorf("server forced to shutdown: %v", err)
+		s.logger.Error("Server forced to shutdown", map[string]any{
+			"error": err.Error(),
+		})
+
 		return err
 	}
 
-	logger.Infof("server shutdown complete")
+	s.logger.Info("Server shutdown complete")
 	return nil
 }

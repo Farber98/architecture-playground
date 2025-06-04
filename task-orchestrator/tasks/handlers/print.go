@@ -8,21 +8,31 @@ import (
 )
 
 // PrintHandler executes a "print" task by logging the provided message.
-type PrintHandler struct{}
+type PrintHandler struct {
+	logger *logger.Logger
+}
 
-type PrintPayload struct {
+type printPayload struct {
 	Message string `json:"message"`
 }
 
+func NewPrintHandler(lg *logger.Logger) *PrintHandler {
+	return &PrintHandler{logger: lg}
+}
+
 func (h *PrintHandler) Run(task *tasks.Task) error {
-	var p PrintPayload
+	var p printPayload
 	if err := json.Unmarshal(task.Payload, &p); err != nil {
 		return errors.NewValidationError("invalid print payload", map[string]any{
 			"task_id": task.ID,
 			"error":   err.Error(),
 		})
 	}
-	logger.Taskf(task.ID, "executing print task: %s", p.Message)
+
+	h.logger.Task(task.ID, "executing print task", map[string]any{
+		"message": p.Message,
+	})
+
 	task.Result = "printed: " + p.Message
 	task.Status = "done"
 	return nil

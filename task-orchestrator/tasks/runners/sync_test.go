@@ -1,9 +1,11 @@
 package runners_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"task-orchestrator/errors"
+	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
 	"task-orchestrator/tasks/handlers"
 	"task-orchestrator/tasks/runners"
@@ -14,10 +16,14 @@ import (
 )
 
 func TestSynchronousRunner_Run_WithRegisteredHandler(t *testing.T) {
-	reg := tasks.NewRegistry()
-	reg.Register("print", &handlers.PrintHandler{})
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
 
-	runner := runners.NewSynchronousRunner(reg)
+	reg := tasks.NewRegistry()
+	reg.Register("print", handlers.NewPrintHandler(testLogger))
+
+	runner := runners.NewSynchronousRunner(reg, testLogger)
 
 	task := &tasks.Task{
 		ID:      "task-123",
@@ -34,8 +40,12 @@ func TestSynchronousRunner_Run_WithRegisteredHandler(t *testing.T) {
 }
 
 func TestSynchronousRunner_Run_UnregisteredType(t *testing.T) {
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
 	reg := tasks.NewRegistry()
-	runner := runners.NewSynchronousRunner(reg)
+	runner := runners.NewSynchronousRunner(reg, testLogger)
 
 	task := &tasks.Task{
 		ID:      "unknown-task-id",
@@ -51,7 +61,7 @@ func TestSynchronousRunner_Run_UnregisteredType(t *testing.T) {
 
 	// Task status should be updated to failed
 	assert.Equal(t, "failed", task.Status)
-	assert.ErrorContains(t, err, task.Result, "no handler registered for task type: unknown")
+	require.Contains(t, task.Result, "no handler registered for task type")
 }
 
 // ErroringHandler is a test handler that always returns an error
@@ -73,6 +83,10 @@ func (t *TaskErrorHandler) Run(task *tasks.Task) error {
 }
 
 func TestSynchronousRunner_Run_HandlerReturnsTaskError(t *testing.T) {
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
 	// Test that structured TaskErrors are preserved
 	reg := tasks.NewRegistry()
 
@@ -81,7 +95,7 @@ func TestSynchronousRunner_Run_HandlerReturnsTaskError(t *testing.T) {
 	})
 
 	reg.Register("failing", &TaskErrorHandler{TaskError: expectedError})
-	runner := runners.NewSynchronousRunner(reg)
+	runner := runners.NewSynchronousRunner(reg, testLogger)
 
 	task := &tasks.Task{
 		ID:      "failing-task",
@@ -107,12 +121,16 @@ func TestSynchronousRunner_Run_HandlerReturnsTaskError(t *testing.T) {
 }
 
 func TestSynchronousRunner_Run_HandlerReturnsGenericError(t *testing.T) {
+	// Create test logger
+	var buf bytes.Buffer
+	testLogger := logger.New("DEBUG", &buf)
+
 	// Test that generic errors are wrapped as ExecutionErrors
 	reg := tasks.NewRegistry()
 
 	genericError := fmt.Errorf("an error")
 	reg.Register("erroring-task", &ErroringHandler{ErrorToReturn: genericError})
-	runner := runners.NewSynchronousRunner(reg)
+	runner := runners.NewSynchronousRunner(reg, testLogger)
 
 	task := &tasks.Task{
 		ID:      "erroring-task-123",

@@ -18,30 +18,31 @@ type Sleeper interface {
 
 // RealSleeper is the production implementation of Sleeper.
 // It delegates directly to time.Sleep.
-type RealSleeper struct{}
+type realSleeper struct{}
 
-func (s *RealSleeper) Sleep(d time.Duration) {
+func (s *realSleeper) Sleep(d time.Duration) {
 	time.Sleep(d)
 }
 
 // SleepHandler pauses execution for the specified number of seconds.
 type SleepHandler struct {
-	Sleeper Sleeper
+	sleeper Sleeper
+	logger  *logger.Logger
 }
 
 // NewSleepHandler returns a production-ready SleepHandler using RealSleeper.
-func NewSleepHandler() *SleepHandler {
-	return &SleepHandler{Sleeper: &RealSleeper{}}
+func NewSleepHandler(lg *logger.Logger) *SleepHandler {
+	return &SleepHandler{sleeper: &realSleeper{}, logger: lg}
 }
 
-type SleepPayload struct {
+type sleepPayload struct {
 	// Seconds must be a required, positive integer field.
 	// Pointer type is used to distinguish missing vs zero values.
 	Seconds *int `json:"seconds"`
 }
 
 func (h *SleepHandler) Run(task *tasks.Task) error {
-	var p SleepPayload
+	var p sleepPayload
 	if err := json.Unmarshal(task.Payload, &p); err != nil {
 		return errors.NewValidationError("invalid sleep payload", map[string]any{
 			"task_id": task.ID,
@@ -59,8 +60,10 @@ func (h *SleepHandler) Run(task *tasks.Task) error {
 			"seconds": *p.Seconds,
 		})
 	}
-	logger.Taskf(task.ID, "executing sleep task: %d seconds", *p.Seconds)
-	h.Sleeper.Sleep(time.Duration(*p.Seconds) * time.Second)
+	h.logger.Task(task.ID, "executing sleep task", map[string]any{
+		"seconds": *p.Seconds,
+	})
+	h.sleeper.Sleep(time.Duration(*p.Seconds) * time.Second)
 	task.Result = fmt.Sprintf("slept: %d seconds", *p.Seconds)
 	task.Status = "done"
 	return nil

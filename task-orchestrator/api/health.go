@@ -42,7 +42,7 @@ func NewHealthHandler(cfg *config.Config, registry *tasks.HandlerRegistry) http.
 		w.WriteHeader(http.StatusOK)
 		err := json.NewEncoder(w).Encode(response)
 		if err != nil {
-			respondWithError(w, errors.NewInternalError("failed to encode response"))
+			respondWithError(w, errors.NewInternalError("failed to encode response"), cfg.Logger)
 		}
 	}
 }

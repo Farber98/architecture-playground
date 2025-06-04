@@ -16,23 +16,32 @@ func main() {
 	// Load configuration
 	cfg := config.LoadConfig()
 
-	// Configure logger
-	logger.SetLevel(cfg.LogLevel)
-	logger.Infof("starting task orchestrator with config: port=%d, log_level=%s",
-		cfg.ServerPort, cfg.LogLevel)
+	// Create logger
+	cfg.Logger = logger.New(cfg.LogLevel, nil)
+
+	// Log startup using the centralized logger
+	cfg.Logger.Info("Starting task orchestrator", map[string]any{
+		"version":   cfg.Version,
+		"port":      cfg.ServerPort,
+		"log_level": cfg.LogLevel,
+	})
 
 	// Register Task Handlers
 	registry := tasks.NewRegistry()
-	registry.Register("print", &taskHandlers.PrintHandler{})
-	registry.Register("sleep", taskHandlers.NewSleepHandler())
-	logger.Infof("registered task handlers: %v", registry.GetRegisteredTypes())
+	registry.Register("print", taskHandlers.NewPrintHandler(cfg.Logger))
+	registry.Register("sleep", taskHandlers.NewSleepHandler(cfg.Logger))
+
+	cfg.Logger.Info("Registered task handlers", map[string]any{
+		"count": len(registry.GetRegisteredTypes()),
+		"types": registry.GetRegisteredTypes(),
+	})
 
 	// Set up HTTP Handler
-	runner := runners.NewSynchronousRunner(registry)
+	runner := runners.NewSynchronousRunner(registry, cfg.Logger)
 
 	// Create HTTP mux and register routes
 	mux := http.NewServeMux()
-	mux.HandleFunc("/submit", api.NewSubmitHandler(runner))
+	mux.HandleFunc("/submit", api.NewSubmitHandler(runner, cfg.Logger))
 
 	// Add health check endpoint
 	mux.HandleFunc("/health", api.NewHealthHandler(cfg, registry))

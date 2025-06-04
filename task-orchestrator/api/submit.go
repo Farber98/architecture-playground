@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"task-orchestrator/errors"
 	"task-orchestrator/logger"
 	tasks "task-orchestrator/tasks"
@@ -11,15 +12,21 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	maxBodySize    = 1024 * 1024 // 1 MB
+	maxPayloadSize = 1024 * 100  // 100 KB
+	maxTypeLen     = 50
+)
+
 // ErrorResponse defines the JSON structure for error responses
-type ErrorResponse struct {
+type errorResponse struct {
 	Error   string         `json:"error"`
 	Type    string         `json:"type,omitempty"`
 	Details map[string]any `json:"details,omitempty"`
 }
 
 // SubmitRequest defines the expected payload for a Task.
-type SubmitRequest struct {
+type submitRequest struct {
 	Type    string          `json:"type"`
 	Payload json.RawMessage `json:"payload"`
 }
@@ -35,23 +42,51 @@ type SubmitResponse struct {
 //
 // This handler is synchronous — it calls the Runner immediately and returns the task result.
 // It assumes that the runner handles task routing, lifecycle management, and logging.
-func NewSubmitHandler(runner runners.Runner) http.HandlerFunc {
+func NewSubmitHandler(runner runners.Runner, lg *logger.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			respondWithError(w, errors.NewValidationError("method not allowed"))
+			respondWithError(w, errors.NewValidationError("method not allowed"), lg)
 			return
 		}
 
-		var req SubmitRequest
+		// Limit request body size - this will cause Decode to fail if exceeded
+		r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+
+		var req submitRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondWithError(w, errors.NewValidationError("invalid JSON payload", map[string]interface{}{
+			// Check if the error is due to request size limit
+			if strings.Contains(err.Error(), "http: request body too large") {
+				respondWithError(w, errors.NewValidationError("request body too large", map[string]any{
+					"max_size_bytes": maxBodySize,
+				}), lg)
+				return
+			}
+
+			// Other JSON parsing errors
+			respondWithError(w, errors.NewValidationError("invalid JSON payload", map[string]any{
 				"error": err.Error(),
-			}))
+			}), lg)
 			return
 		}
 
 		if req.Type == "" {
-			respondWithError(w, errors.NewValidationError("task type is required"))
+			respondWithError(w, errors.NewValidationError("task type is required"), lg)
+			return
+		}
+
+		if len(req.Type) > maxTypeLen {
+			respondWithError(w, errors.NewValidationError("task type too long", map[string]any{
+				"max_length":    maxTypeLen,
+				"actual_length": len(req.Type),
+			}), lg)
+			return
+		}
+
+		if len(req.Payload) > maxPayloadSize {
+			respondWithError(w, errors.NewValidationError("task payload too large", map[string]any{
+				"max_size_bytes":    maxPayloadSize,
+				"actual_size_bytes": len(req.Payload),
+			}), lg)
 			return
 		}
 
@@ -63,14 +98,19 @@ func NewSubmitHandler(runner runners.Runner) http.HandlerFunc {
 			Result:  "",
 		}
 
-		logger.Infof("received new task submission: type=%s", req.Type)
+		// Updated to structured logging
+		lg.Info("received new task submission", map[string]any{
+			"task_id":            task.ID,
+			"task_type":          req.Type,
+			"payload_size_bytes": len(req.Payload),
+		})
 
 		if err := runner.Run(task); err != nil {
 			if taskErr, ok := errors.IsTaskError(err); ok {
-				respondWithError(w, taskErr)
+				respondWithError(w, taskErr, lg)
 			} else {
 				// Wrap unknown errors as internal errors
-				respondWithError(w, errors.NewInternalError(err.Error()))
+				respondWithError(w, errors.NewInternalError(err.Error()), lg)
 			}
 			return
 		}
@@ -84,26 +124,37 @@ func NewSubmitHandler(runner runners.Runner) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		err := json.NewEncoder(w).Encode(resp)
 		if err != nil {
-			respondWithError(w, errors.NewInternalError("failed to encode response"))
+			respondWithError(w, errors.NewInternalError("failed to encode response"), lg)
 		}
 	}
 }
 
 // respondWithError sends a structured error response
-func respondWithError(w http.ResponseWriter, taskErr *errors.TaskError) {
+func respondWithError(w http.ResponseWriter, taskErr *errors.TaskError, lg *logger.Logger) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(taskErr.Code)
 
-	errorResp := ErrorResponse{
+	errorResp := errorResponse{
 		Error:   taskErr.Message,
 		Type:    string(taskErr.Type),
 		Details: taskErr.Details,
 	}
 
+	lg.Error("HTTP error response", map[string]any{
+		"error_type":    string(taskErr.Type),
+		"error_message": taskErr.Message,
+		"status_code":   taskErr.Code,
+		"error_details": taskErr.Details,
+	})
+
 	if err := json.NewEncoder(w).Encode(errorResp); err != nil {
 		// Log the encoding failure
-		logger.Errorf("failed to encode error response: %v", err)
-		// At this point, we've already written headers and potentially some data,
+		lg.Error("HTTP error response", map[string]any{
+			"error_type":    string(taskErr.Type),
+			"error_message": taskErr.Message,
+			"status_code":   taskErr.Code,
+			"error_details": taskErr.Details,
+		}) // At this point, we've already written headers and potentially some data,
 		// so we can't recover gracefully. The connection may be broken.
 	}
 }
