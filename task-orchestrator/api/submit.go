@@ -6,10 +6,7 @@ import (
 	"strings"
 	"task-orchestrator/errors"
 	"task-orchestrator/logger"
-	tasks "task-orchestrator/tasks"
-	"task-orchestrator/tasks/runners"
-
-	"github.com/google/uuid"
+	"task-orchestrator/tasks/orchestrator"
 )
 
 const (
@@ -42,7 +39,7 @@ type SubmitResponse struct {
 //
 // This handler is synchronous — it calls the Runner immediately and returns the task result.
 // It assumes that the runner handles task routing, lifecycle management, and logging.
-func NewSubmitHandler(runner runners.Runner, lg *logger.Logger) http.HandlerFunc {
+func NewSubmitHandler(orch orchestrator.Orchestrator, lg *logger.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			respondWithError(w, errors.NewValidationError("method not allowed"), lg)
@@ -90,26 +87,11 @@ func NewSubmitHandler(runner runners.Runner, lg *logger.Logger) http.HandlerFunc
 			return
 		}
 
-		task := &tasks.Task{
-			ID:      uuid.New().String(),
-			Type:    req.Type,
-			Payload: req.Payload,
-			Status:  "submitted",
-			Result:  "",
-		}
-
-		// Updated to structured logging
-		lg.Info("received new task submission", map[string]any{
-			"task_id":            task.ID,
-			"task_type":          req.Type,
-			"payload_size_bytes": len(req.Payload),
-		})
-
-		if err := runner.Run(task); err != nil {
+		task, err := orch.SubmitTask(req.Type, req.Payload)
+		if err != nil {
 			if taskErr, ok := errors.IsTaskError(err); ok {
 				respondWithError(w, taskErr, lg)
 			} else {
-				// Wrap unknown errors as internal errors
 				respondWithError(w, errors.NewInternalError(err.Error()), lg)
 			}
 			return
@@ -122,7 +104,7 @@ func NewSubmitHandler(runner runners.Runner, lg *logger.Logger) http.HandlerFunc
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		err := json.NewEncoder(w).Encode(resp)
+		err = json.NewEncoder(w).Encode(resp)
 		if err != nil {
 			respondWithError(w, errors.NewInternalError("failed to encode response"), lg)
 		}

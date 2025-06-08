@@ -1,8 +1,6 @@
 package runners
 
-import (
-	"task-orchestrator/tasks"
-)
+import "task-orchestrator/tasks"
 
 // Runner defines the interface for executing tasks.
 type Runner interface {

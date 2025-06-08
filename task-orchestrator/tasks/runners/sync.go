@@ -4,6 +4,7 @@ import (
 	"task-orchestrator/errors"
 	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
+	handlerRegistry "task-orchestrator/tasks/registry"
 	"time"
 )
 
@@ -14,12 +15,12 @@ var _ Runner = (*SynchronousRunner)(nil)
 // It delegates execution to the appropriate TaskHandler based on task.Type,
 // and logs lifecycle events such as start, duration, and result.
 type SynchronousRunner struct {
-	registry *tasks.HandlerRegistry
+	registry *handlerRegistry.HandlerRegistry
 	logger   *logger.Logger
 }
 
 // NewSynchronousRunner constructs a new SynchronousRunner with a handler registry.
-func NewSynchronousRunner(r *tasks.HandlerRegistry, lg *logger.Logger) *SynchronousRunner {
+func NewSynchronousRunner(r *handlerRegistry.HandlerRegistry, lg *logger.Logger) *SynchronousRunner {
 	return &SynchronousRunner{registry: r, logger: lg}
 }
 

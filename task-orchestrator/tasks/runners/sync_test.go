@@ -8,6 +8,7 @@ import (
 	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
 	"task-orchestrator/tasks/handlers"
+	handlerRegistry "task-orchestrator/tasks/registry"
 	"task-orchestrator/tasks/runners"
 	"testing"
 
@@ -20,7 +21,7 @@ func TestSynchronousRunner_Run_WithRegisteredHandler(t *testing.T) {
 	var buf bytes.Buffer
 	testLogger := logger.New("DEBUG", &buf)
 
-	reg := tasks.NewRegistry()
+	reg := handlerRegistry.NewRegistry()
 	reg.Register("print", handlers.NewPrintHandler(testLogger))
 
 	runner := runners.NewSynchronousRunner(reg, testLogger)
@@ -44,7 +45,7 @@ func TestSynchronousRunner_Run_UnregisteredType(t *testing.T) {
 	var buf bytes.Buffer
 	testLogger := logger.New("DEBUG", &buf)
 
-	reg := tasks.NewRegistry()
+	reg := handlerRegistry.NewRegistry()
 	runner := runners.NewSynchronousRunner(reg, testLogger)
 
 	task := &tasks.Task{
@@ -88,7 +89,7 @@ func TestSynchronousRunner_Run_HandlerReturnsTaskError(t *testing.T) {
 	testLogger := logger.New("DEBUG", &buf)
 
 	// Test that structured TaskErrors are preserved
-	reg := tasks.NewRegistry()
+	reg := handlerRegistry.NewRegistry()
 
 	expectedError := errors.NewValidationError("invalid payload", map[string]any{
 		"field": "missing_value",
@@ -126,7 +127,7 @@ func TestSynchronousRunner_Run_HandlerReturnsGenericError(t *testing.T) {
 	testLogger := logger.New("DEBUG", &buf)
 
 	// Test that generic errors are wrapped as ExecutionErrors
-	reg := tasks.NewRegistry()
+	reg := handlerRegistry.NewRegistry()
 
 	genericError := fmt.Errorf("an error")
 	reg.Register("erroring-task", &ErroringHandler{ErrorToReturn: genericError})

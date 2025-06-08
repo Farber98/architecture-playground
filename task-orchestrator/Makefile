@@ -24,4 +24,15 @@ test-load:
           -d "{\"type\": \"print\", \"payload\": {\"message\": \"Load test $$i\"}}" & \
     done; wait
 
-.PHONY: test run test-print test-sleep test-health load-test
+test-status:
+	@echo "=== Testing Task Status Endpoint ==="
+	@echo "1. Submitting a task..."
+	@TASK_ID=$$(curl -s -X POST http://localhost:8080/submit \
+		-H "Content-Type: application/json" \
+		-d '{"type": "print", "payload": {"message": "Status test task"}}' | \
+		jq -r '.task_id'); \
+	echo "Task ID: $$TASK_ID"; \
+	echo "2. Checking task status..."; \
+	curl -X GET http://localhost:8080/tasks/$$TASK_ID/status
+
+.PHONY: test run test-print test-sleep test-health load-test test-status

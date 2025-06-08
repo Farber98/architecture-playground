@@ -6,7 +6,7 @@ import (
 	"task-orchestrator/config"
 	"task-orchestrator/errors"
 	"task-orchestrator/logger"
-	tasks "task-orchestrator/tasks"
+	handlerRegistry "task-orchestrator/tasks/registry"
 	"time"
 )
 
@@ -23,7 +23,7 @@ type HealthResponse struct {
 }
 
 // NewHealthHandler returns a health check handler
-func NewHealthHandler(cfg *config.Config, registry *tasks.HandlerRegistry, lg *logger.Logger) http.HandlerFunc {
+func NewHealthHandler(cfg *config.Config, registry *handlerRegistry.HandlerRegistry, lg *logger.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

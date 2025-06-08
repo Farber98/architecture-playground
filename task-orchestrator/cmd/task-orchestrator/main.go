@@ -8,8 +8,9 @@ import (
 	"task-orchestrator/api/server"
 	"task-orchestrator/config"
 	"task-orchestrator/logger"
-	"task-orchestrator/tasks"
 	taskHandlers "task-orchestrator/tasks/handlers"
+	"task-orchestrator/tasks/orchestrator"
+	handlerRegistry "task-orchestrator/tasks/registry"
 	"task-orchestrator/tasks/runners"
 	"task-orchestrator/tasks/store"
 )
@@ -29,7 +30,7 @@ func main() {
 	})
 
 	// Register Task Handlers
-	registry := tasks.NewRegistry()
+	registry := handlerRegistry.NewRegistry()
 	registry.Register("print", taskHandlers.NewPrintHandler(lg))
 	registry.Register("sleep", taskHandlers.NewSleepHandler(lg))
 
@@ -38,16 +39,16 @@ func main() {
 		"types": registry.GetRegisteredTypes(),
 	})
 
-	// Create task store
-	_ = store.NewMemoryTaskStore()
-
-	// Set up HTTP Handler
+	// Create task store, runner and wire up orchestrator
+	store := store.NewMemoryTaskStore()
 	runner := runners.NewSynchronousRunner(registry, lg)
+	orchestrator := orchestrator.NewOrchestrator(store, runner, lg)
 
 	// Create HTTP mux and register routes
 	mux := http.NewServeMux()
-	mux.HandleFunc("/submit", api.NewSubmitHandler(runner, lg))
+	mux.HandleFunc("/submit", api.NewSubmitHandler(orchestrator, lg))
 	mux.HandleFunc("/health", api.NewHealthHandler(cfg, registry, lg))
+	mux.HandleFunc("/tasks/", api.NewTaskStatusHandler(orchestrator, lg))
 
 	// Wrap mux with middlewares
 	loggingMw := middleware.LoggingMiddleware(lg)
