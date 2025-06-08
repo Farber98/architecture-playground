@@ -35,4 +35,18 @@ test-status:
 	echo "2. Checking task status..."; \
 	curl -X GET http://localhost:8080/tasks/$$TASK_ID/status
 
-.PHONY: test run test-print test-sleep test-health load-test test-status
+test-given-status:
+	@if [ -n "$(ID)" ]; then \
+		TASK_ID="$(ID)"; \
+	elif [ ! -t 0 ]; then \
+		TASK_ID=$$(cat); \
+	else \
+		echo "❌ Error: Task ID is required"; \
+		echo "Usage: make check-task-advanced ID=<task-id>"; \
+		echo "   or: echo '<task-id>' | make check-task-advanced"; \
+		exit 1; \
+	fi; \
+	echo "🔍 Checking status for task: $$TASK_ID"; \
+	curl -s -X GET http://localhost:8080/tasks/$$TASK_ID/status | jq '.'
+
+.PHONY: test run test-print test-sleep test-health load-test test-status test-given-status

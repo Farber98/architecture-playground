@@ -55,6 +55,14 @@ func (o *orchestrator) SubmitTask(taskType string, payload json.RawMessage) (*ta
 		Result:  "",
 	}
 
+	// Persist initial task state
+	if err := o.store.Save(task); err != nil {
+		o.logger.Task("failed to save task", task.ID, map[string]any{
+			"error": err.Error(),
+		})
+		return task, errors.NewInternalError("failed to save task")
+	}
+
 	o.logger.Task("task submitted", task.ID, map[string]any{
 		"task_type":    task.Type,
 		"runner_type":  fmt.Sprintf("%T", o.runner),
@@ -66,21 +74,13 @@ func (o *orchestrator) SubmitTask(taskType string, payload json.RawMessage) (*ta
 
 // executeTask handles the execution using the configured runner strategy.
 func (o *orchestrator) executeTask(task *tasks.Task) error {
-	// Persist initial task state
-	if err := o.store.Save(task); err != nil {
-		o.logger.Task("failed to save task", task.ID, map[string]any{
-			"error": err.Error(),
-		})
-		return errors.NewInternalError("failed to save task")
-	}
-
-	// Delegate to runner strategy
-	// This is where the behavior changes based on the injected runner
 	o.logger.Task("running task", task.ID, map[string]any{
 		"runner_type": fmt.Sprintf("%T", o.runner),
 		"status":      task.Status,
 	})
 
+	// Delegate to runner strategy
+	// This is where the behavior changes based on the injected runner
 	if err := o.runner.Run(task); err != nil {
 		o.logger.Task("task execution failed", task.ID, map[string]any{
 			"error":       err.Error(),
@@ -103,7 +103,7 @@ func (o *orchestrator) executeTask(task *tasks.Task) error {
 			"error":        err.Error(),
 			"final_status": task.Status,
 		})
-		// the task was succesful, what it failed was the update. We continue.
+		// the task exec was succesful, what failed was the update. We continue.
 	}
 
 	o.logger.Task("task completed successfully", task.ID, map[string]any{
