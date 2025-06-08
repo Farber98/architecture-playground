@@ -26,7 +26,7 @@ func TestTaskStatusHandler_Success(t *testing.T) {
 
 	reg := handlerRegistry.NewRegistry()
 	reg.Register("print", handlers.NewPrintHandler(testLogger))
-	runner := runners.NewSynchronousRunner(reg, testLogger)
+	runner := runners.NewSynchronousRunner(reg)
 	taskStore := store.NewMemoryTaskStore()
 	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
 
@@ -48,7 +48,7 @@ func TestTaskStatusHandler_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, task.ID, resp.TaskID)
-	assert.Equal(t, "done", resp.Status) // Print handler sets status to "done"
+	assert.Equal(t, tasks.StatusDone.String(), resp.Status) // Print handler sets status to "done"
 }
 
 func TestTaskStatusHandler_NonExistentTask(t *testing.T) {
@@ -57,7 +57,7 @@ func TestTaskStatusHandler_NonExistentTask(t *testing.T) {
 	testLogger := logger.New("DEBUG", &buf)
 
 	taskStore := store.NewMemoryTaskStore()
-	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry(), testLogger)
+	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
 	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
 	handler := NewTaskStatusHandler(orch, testLogger)
 
@@ -155,42 +155,42 @@ func TestTaskStatusHandler_DifferentTaskStatuses(t *testing.T) {
 	testLogger := logger.New("DEBUG", &buf)
 
 	taskStore := store.NewMemoryTaskStore()
-	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry(), testLogger)
+	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
 	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
 	handler := NewTaskStatusHandler(orch, testLogger)
 
 	testCases := []struct {
 		name           string
 		taskID         string
-		taskStatus     string
+		taskStatus     tasks.TaskStatus
 		taskResult     string
 		expectedStatus string
 	}{
 		{
 			name:           "completed task",
 			taskID:         "test-task-completed",
-			taskStatus:     "done",
+			taskStatus:     tasks.StatusDone,
 			taskResult:     "task completed successfully",
 			expectedStatus: "done",
 		},
 		{
 			name:           "failed task",
 			taskID:         "test-task-failed",
-			taskStatus:     "failed",
+			taskStatus:     tasks.StatusFailed,
 			taskResult:     "task execution failed",
 			expectedStatus: "failed",
 		},
 		{
 			name:           "running task",
 			taskID:         "test-task-running",
-			taskStatus:     "running",
+			taskStatus:     tasks.StatusRunning,
 			taskResult:     "",
 			expectedStatus: "running",
 		},
 		{
 			name:           "submitted task",
 			taskID:         "test-task-submitted",
-			taskStatus:     "submitted",
+			taskStatus:     tasks.StatusSubmitted,
 			taskResult:     "",
 			expectedStatus: "submitted",
 		},
@@ -198,14 +198,10 @@ func TestTaskStatusHandler_DifferentTaskStatuses(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Create a task directly in the store with the desired status
-			task := &tasks.Task{
-				ID:      tc.taskID,
-				Type:    "print",
-				Status:  tc.taskStatus,
-				Result:  tc.taskResult,
-				Payload: []byte(`{"message":"test"}`),
-			}
+			task := tasks.NewTask("print", []byte(`{"message":"test"}`))
+			task.ID = tc.taskID         // Override the auto-generated ID for this test
+			task.Status = tc.taskStatus // Now using TaskStatus type
+			task.Result = tc.taskResult
 			require.NoError(t, taskStore.Save(task))
 
 			req := httptest.NewRequest(http.MethodGet, "/tasks/"+task.ID+"/status", nil)
@@ -232,7 +228,7 @@ func TestTaskStatusHandler_ResponseEncodingFailure(t *testing.T) {
 
 	reg := handlerRegistry.NewRegistry()
 	reg.Register("print", handlers.NewPrintHandler(testLogger))
-	runner := runners.NewSynchronousRunner(reg, testLogger)
+	runner := runners.NewSynchronousRunner(reg)
 	taskStore := store.NewMemoryTaskStore()
 	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
 
@@ -258,7 +254,7 @@ func TestTaskStatusHandler_LoggingIntegration(t *testing.T) {
 
 	reg := handlerRegistry.NewRegistry()
 	reg.Register("print", handlers.NewPrintHandler(testLogger))
-	runner := runners.NewSynchronousRunner(reg, testLogger)
+	runner := runners.NewSynchronousRunner(reg)
 	taskStore := store.NewMemoryTaskStore()
 	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
 
@@ -288,17 +284,14 @@ func TestTaskStatusHandler_URLPathParsing(t *testing.T) {
 	testLogger := logger.New("DEBUG", &buf)
 
 	taskStore := store.NewMemoryTaskStore()
-	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry(), testLogger)
+	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
 	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
 	handler := NewTaskStatusHandler(orch, testLogger)
 
-	// Create a task in the store
-	task := &tasks.Task{
-		ID:     "test-task-with-special-chars",
-		Type:   "print",
-		Status: "done",
-		Result: "completed",
-	}
+	task := tasks.NewTask("print", []byte(`{"message":"test"}`))
+	task.ID = "test-task-with-special-chars"
+	task.Status = tasks.StatusDone
+	task.Result = "completed"
 	require.NoError(t, taskStore.Save(task))
 
 	testCases := []struct {
@@ -356,7 +349,7 @@ func TestTaskStatusHandler_ContentType(t *testing.T) {
 
 	reg := handlerRegistry.NewRegistry()
 	reg.Register("print", handlers.NewPrintHandler(testLogger))
-	runner := runners.NewSynchronousRunner(reg, testLogger)
+	runner := runners.NewSynchronousRunner(reg)
 	taskStore := store.NewMemoryTaskStore()
 	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
 

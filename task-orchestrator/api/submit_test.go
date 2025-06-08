@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"task-orchestrator/errors"
 	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
 	"task-orchestrator/tasks/handlers"
@@ -27,7 +28,7 @@ func TestSubmitHandler_Print_Success(t *testing.T) {
 
 	reg := handlerRegistry.NewRegistry()
 	reg.Register("print", handlers.NewPrintHandler(testLogger))
-	runner := runners.NewSynchronousRunner(reg, testLogger)
+	runner := runners.NewSynchronousRunner(reg)
 	store := store.NewMemoryTaskStore()
 	orchestrator := orchestrator.NewOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orchestrator, testLogger)
@@ -45,7 +46,7 @@ func TestSubmitHandler_Print_Success(t *testing.T) {
 	err := json.NewDecoder(rr.Body).Decode(&resp)
 	require.NoError(t, err)
 
-	assert.Equal(t, "done", resp.Status)
+	assert.Equal(t, tasks.StatusDone.String(), resp.Status)
 	assert.Equal(t, "printed: Hello from HTTP", resp.Result)
 	assert.Assert(t, resp.TaskID != "")
 }
@@ -56,7 +57,7 @@ func TestSubmitHandler_InvalidJSON(t *testing.T) {
 	testLogger := logger.New("DEBUG", &buf)
 
 	store := store.NewMemoryTaskStore()
-	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry(), testLogger)
+	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
 	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
@@ -83,7 +84,7 @@ func TestSubmitHandler_UnknownTaskType(t *testing.T) {
 	testLogger := logger.New("DEBUG", &buf)
 
 	store := store.NewMemoryTaskStore()
-	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry(), testLogger)
+	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
 	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
@@ -111,7 +112,7 @@ func TestSubmitHandler_MissingTaskType(t *testing.T) {
 	testLogger := logger.New("DEBUG", &buf)
 
 	store := store.NewMemoryTaskStore()
-	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry(), testLogger)
+	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
 	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
@@ -162,7 +163,7 @@ func TestSubmitHandler_TaskHandlerValidationError(t *testing.T) {
 	reg := handlerRegistry.NewRegistry()
 	reg.Register("sleep", handlers.NewSleepHandler(testLogger))
 	store := store.NewMemoryTaskStore()
-	runner := runners.NewSynchronousRunner(reg, testLogger)
+	runner := runners.NewSynchronousRunner(reg)
 	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
@@ -195,7 +196,7 @@ func TestSubmitHandler_PayloadTooLarge(t *testing.T) {
 	testLogger := logger.New("DEBUG", &buf)
 
 	store := store.NewMemoryTaskStore()
-	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry(), testLogger)
+	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
 	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
@@ -236,7 +237,7 @@ func TestSubmitHandler_TaskTypeTooLong(t *testing.T) {
 	testLogger := logger.New("DEBUG", &buf)
 
 	store := store.NewMemoryTaskStore()
-	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry(), testLogger)
+	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
 	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
@@ -275,7 +276,7 @@ func TestSubmitHandler_RequestBodyTooLarge(t *testing.T) {
 	testLogger := logger.New("DEBUG", &buf)
 
 	store := store.NewMemoryTaskStore()
-	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry(), testLogger)
+	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
 	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
@@ -324,7 +325,7 @@ func TestSubmitHandler_ResponseEncodingFailure(t *testing.T) {
 	reg.Register("print", handlers.NewPrintHandler(testLogger))
 
 	store := store.NewMemoryTaskStore()
-	runner := runners.NewSynchronousRunner(reg, testLogger)
+	runner := runners.NewSynchronousRunner(reg)
 	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
@@ -340,40 +341,34 @@ func TestSubmitHandler_ResponseEncodingFailure(t *testing.T) {
 	handler.ServeHTTP(w, req)
 }
 
-// UnknownErrorHandler is a test handler that returns a non-TaskError
-type UnknownErrorHandler struct{}
-
-func (u *UnknownErrorHandler) Run(task *tasks.Task) error {
-	// Return a generic error that's not a TaskError
-	return fmt.Errorf("generic error")
-}
-
-func TestSubmitHandler_UnknownErrorWrappedAsExecutionError(t *testing.T) {
+func TestSubmitHandler_TaskErrorFromOrchestrator(t *testing.T) {
 	// Create test logger
-	reg := handlerRegistry.NewRegistry()
-	reg.Register("unknown-error", &UnknownErrorHandler{})
-
-	// wire orchestrator
 	var buf bytes.Buffer
 	testLogger := logger.New("DEBUG", &buf)
-	store := store.NewMemoryTaskStore()
-	runner := runners.NewSynchronousRunner(reg, testLogger)
-	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
-	handler := NewSubmitHandler(orch, testLogger)
 
-	body := []byte(`{"type":"unknown-error","payload":{"test":"data"}}`)
+	// Create a mock orchestrator that returns a TaskError from SubmitTask
+	mockOrch := &mockOrchestrator{
+		submitTaskErr: errors.NewValidationError("invalid task configuration", map[string]any{
+			"task_type": "invalid",
+		}),
+	}
+
+	handler := NewSubmitHandler(mockOrch, testLogger)
+
+	body := []byte(`{"type":"invalid","payload":{"message":"test"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/submit", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	assert.Equal(t, http.StatusUnprocessableEntity, rr.Code)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 
 	var errorResp errorResponse
 	err := json.NewDecoder(rr.Body).Decode(&errorResp)
 	require.NoError(t, err)
 
-	assert.Equal(t, "execution", errorResp.Type)
-	assert.Equal(t, "task execution failed", errorResp.Error)
+	assert.Equal(t, "validation", errorResp.Type)
+	assert.Equal(t, "invalid task configuration", errorResp.Error)
+	assert.Equal(t, "invalid", errorResp.Details["task_type"])
 }

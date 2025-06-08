@@ -8,8 +8,6 @@ import (
 	"task-orchestrator/tasks"
 	"task-orchestrator/tasks/runners"
 	"task-orchestrator/tasks/store"
-
-	"github.com/google/uuid"
 )
 
 // Orchestrator defines the contract for task orchestration services.
@@ -47,13 +45,7 @@ func NewOrchestrator(store store.TaskStore, runner runners.Runner, lg *logger.Lo
 
 // SubmitTask creates and executes a new task using the configured runner strategy.
 func (o *orchestrator) SubmitTask(taskType string, payload json.RawMessage) (*tasks.Task, error) {
-	task := &tasks.Task{
-		ID:      uuid.New().String(),
-		Type:    taskType,
-		Payload: payload,
-		Status:  "submitted",
-		Result:  "",
-	}
+	task := tasks.NewTask(taskType, payload)
 
 	// Persist initial task state
 	if err := o.store.Save(task); err != nil {
@@ -63,7 +55,7 @@ func (o *orchestrator) SubmitTask(taskType string, payload json.RawMessage) (*ta
 		return task, errors.NewInternalError("failed to save task")
 	}
 
-	o.logger.Task("task submitted", task.ID, map[string]any{
+	o.logger.Task(task.ID, "task submitted", map[string]any{
 		"task_type":    task.Type,
 		"runner_type":  fmt.Sprintf("%T", o.runner),
 		"payload_size": len(task.Payload),
@@ -74,20 +66,42 @@ func (o *orchestrator) SubmitTask(taskType string, payload json.RawMessage) (*ta
 
 // executeTask handles the execution using the configured runner strategy.
 func (o *orchestrator) executeTask(task *tasks.Task) error {
-	o.logger.Task("running task", task.ID, map[string]any{
-		"runner_type": fmt.Sprintf("%T", o.runner),
-		"status":      task.Status,
-	})
+	if err := task.SetStatus(tasks.StatusRunning); err != nil {
+		return err
+	}
+
+	if err := o.store.Update(task.ID, task.Status, task.Result); err != nil {
+		o.logger.Task("failed to update running status", task.ID, map[string]any{
+			"error": err.Error(),
+		})
+		// Continue execution even if store update fails
+	}
 
 	// Delegate to runner strategy
 	// This is where the behavior changes based on the injected runner
 	if err := o.runner.Run(task); err != nil {
-		o.logger.Task("task execution failed", task.ID, map[string]any{
-			"error":       err.Error(),
-			"runner_type": fmt.Sprintf("%T", o.runner),
+		o.logger.Task(task.ID, "execution failed", map[string]any{
+			"error": err.Error(),
 		})
 
-		if updateErr := o.store.Update(task.ID, "failed", fmt.Sprintf("execution failed: %s", err.Error())); updateErr != nil {
+		if setErr := task.SetStatus(tasks.StatusFailed); setErr != nil {
+			o.logger.Error("failed to set task status to failed", map[string]any{
+				"task_id": task.ID,
+				"error":   setErr.Error(),
+			})
+		}
+
+		// Set failure result if handler didn't set one
+		if task.Result == "" {
+			if taskErr, ok := errors.IsTaskError(err); ok {
+				task.Result = fmt.Sprintf("task %s: %s", taskErr.Type, taskErr.Message)
+			} else {
+				task.Result = fmt.Sprintf("execution failed: %s", err.Error())
+			}
+		}
+
+		// Update store with failure
+		if updateErr := o.store.Update(task.ID, task.Status, task.Result); updateErr != nil {
 			o.logger.Task("failed to update task failure state", task.ID, map[string]any{
 				"update_error":   updateErr.Error(),
 				"original_error": err.Error(),
@@ -97,19 +111,22 @@ func (o *orchestrator) executeTask(task *tasks.Task) error {
 		return err
 	}
 
+	// handles success
+	if err := task.SetStatus(tasks.StatusDone); err != nil {
+		return err
+	}
+
 	// Update final state
 	if err := o.store.Update(task.ID, task.Status, task.Result); err != nil {
 		o.logger.Task("failed to update final task state", task.ID, map[string]any{
 			"error":        err.Error(),
-			"final_status": task.Status,
+			"final_status": task.Status.String(),
 		})
 		// the task exec was succesful, what failed was the update. We continue.
 	}
 
-	o.logger.Task("task completed successfully", task.ID, map[string]any{
-		"final_status": task.Status,
-		"runner_type":  fmt.Sprintf("%T", o.runner),
-		"result_size":  len(task.Result),
+	o.logger.Task(task.ID, "task completed", map[string]any{
+		"status": task.Status.String(),
 	})
 
 	return nil
@@ -132,5 +149,5 @@ func (o *orchestrator) GetTaskStatus(taskID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return task.Status, nil
+	return task.Status.String(), nil
 }

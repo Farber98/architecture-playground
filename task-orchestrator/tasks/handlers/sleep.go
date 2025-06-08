@@ -67,6 +67,5 @@ func (h *SleepHandler) Run(task *tasks.Task) error {
 	})
 	h.sleeper.Sleep(time.Duration(*p.Seconds) * time.Second)
 	task.Result = fmt.Sprintf("slept: %d seconds", *p.Seconds)
-	task.Status = "done"
 	return nil
 }

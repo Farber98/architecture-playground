@@ -1,6 +1,59 @@
 package tasks
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+
+	"github.com/google/uuid"
+)
+
+// TaskStatus represents the lifecycle state of a task
+type TaskStatus string
+
+const (
+	StatusSubmitted TaskStatus = "submitted"
+	StatusRunning   TaskStatus = "running"
+	StatusDone      TaskStatus = "done"
+	StatusFailed    TaskStatus = "failed"
+)
+
+// String implements the Stringer interface
+func (s TaskStatus) String() string {
+	return string(s)
+}
+
+// IsFinal returns true if this status represents a terminal state
+func (s TaskStatus) IsFinal() bool {
+	return s == StatusDone || s == StatusFailed
+}
+
+// IsActive returns true if the task is in an active processing state
+func (s TaskStatus) IsActive() bool {
+	return s == StatusRunning
+}
+
+// canTransitionTo checks if a transition from current status to target is valid
+func (s TaskStatus) canTransitionTo(target TaskStatus) error {
+	// Define valid state transitions
+	validTransitions := map[TaskStatus][]TaskStatus{
+		StatusSubmitted: {StatusRunning, StatusFailed}, // Can start running or fail during setup
+		StatusRunning:   {StatusDone, StatusFailed},    // Can complete or fail during execution
+		StatusDone:      {},                            // Terminal state - no transitions
+		StatusFailed:    {},                            // Terminal state - no transitions
+	}
+
+	allowed, exists := validTransitions[s]
+	if !exists {
+		return fmt.Errorf("unknown current status: %s", s)
+	}
+
+	if slices.Contains(allowed, target) {
+		return nil // Valid transition
+	}
+
+	return fmt.Errorf("invalid transition from %s to %s", s, target)
+}
 
 // Task represents a unit of work submitted to the system.
 type Task struct {
@@ -17,9 +70,29 @@ type Task struct {
 
 	// Status reflects the current lifecycle state of the task.
 	// Set to "submitted" initially, then updated by the runner.
-	Status string `json:"status"`
+	Status TaskStatus `json:"status"`
 
 	// Result holds the outcome of task execution as a user-readable message.
 	// This is populated by the handler once the task has completed.
 	Result string `json:"result"`
+}
+
+// NewTask creates a new task with the submitted status
+func NewTask(taskType string, payload json.RawMessage) *Task {
+	return &Task{
+		ID:      uuid.New().String(),
+		Type:    taskType,
+		Payload: payload,
+		Status:  StatusSubmitted,
+		Result:  "",
+	}
+}
+
+// SetStatus updates the task status with validation
+func (t *Task) SetStatus(newStatus TaskStatus) error {
+	if err := t.Status.canTransitionTo(newStatus); err != nil {
+		return fmt.Errorf("task %s: %w", t.ID, err)
+	}
+	t.Status = newStatus
+	return nil
 }

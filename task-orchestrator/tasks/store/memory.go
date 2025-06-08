@@ -54,7 +54,7 @@ func (s *MemoryTaskStore) Get(id string) (*tasks.Task, error) {
 
 // Update modifies the status and result of an existing task.
 // This method allows for changing mutable fields of a task after it has been saved,
-func (s *MemoryTaskStore) Update(id string, status string, result string) error {
+func (s *MemoryTaskStore) Update(id string, status tasks.TaskStatus, result string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -63,6 +63,8 @@ func (s *MemoryTaskStore) Update(id string, status string, result string) error 
 		return fmt.Errorf("task with ID %s not found", id)
 	}
 
+	// Don't validate transitions here - trust the orchestrator
+	// The orchestrator has already managed the status transition
 	task.Status = status
 	task.Result = result
 

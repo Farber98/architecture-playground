@@ -22,7 +22,6 @@ func TestPrintHandler_Run(t *testing.T) {
 		name            string
 		payload         string
 		wantErr         bool
-		wantStatus      string
 		wantResult      string
 		wantErrContains string
 	}{
@@ -30,28 +29,24 @@ func TestPrintHandler_Run(t *testing.T) {
 			name:       "basic message",
 			payload:    `{"message":"hello"}`,
 			wantErr:    false,
-			wantStatus: "done",
 			wantResult: "printed: hello",
 		},
 		{
 			name:       "empty message",
 			payload:    `{"message":""}`,
 			wantErr:    false,
-			wantStatus: "done",
 			wantResult: "printed: ",
 		},
 		{
 			name:       "special characters",
 			payload:    `{"message":"hello\nworld\t!"}`,
 			wantErr:    false,
-			wantStatus: "done",
 			wantResult: "printed: hello\nworld\t!",
 		},
 		{
 			name:       "unicode message",
 			payload:    `{"message":"Hello 世界 🌍"}`,
 			wantErr:    false,
-			wantStatus: "done",
 			wantResult: "printed: Hello 世界 🌍",
 		},
 		{
@@ -64,28 +59,24 @@ func TestPrintHandler_Run(t *testing.T) {
 			name:       "missing message field",
 			payload:    `{"other_field":"value"}`,
 			wantErr:    false,
-			wantStatus: "done",
 			wantResult: "printed: ",
 		},
 		{
 			name:       "empty payload",
 			payload:    `{}`,
 			wantErr:    false,
-			wantStatus: "done",
 			wantResult: "printed: ",
 		},
 		{
 			name:       "long message",
 			payload:    `{"message":"this is a very long message with lots of text to test how the handler deals with longer content"}`,
 			wantErr:    false,
-			wantStatus: "done",
 			wantResult: "printed: this is a very long message with lots of text to test how the handler deals with longer content",
 		},
 		{
 			name:       "message with quotes",
 			payload:    `{"message":"hello \"world\" with 'quotes'"}`,
 			wantErr:    false,
-			wantStatus: "done",
 			wantResult: "printed: hello \"world\" with 'quotes'",
 		},
 	}
@@ -95,11 +86,7 @@ func TestPrintHandler_Run(t *testing.T) {
 			// Reset buffer for each test
 			buf.Reset()
 
-			task := &tasks.Task{
-				ID:      "test-id",
-				Type:    "print",
-				Payload: json.RawMessage(tt.payload),
-			}
+			task := tasks.NewTask("print", json.RawMessage(tt.payload))
 
 			err := handler.Run(task)
 
@@ -110,13 +97,12 @@ func TestPrintHandler_Run(t *testing.T) {
 				}
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, tt.wantStatus, task.Status)
 				assert.Equal(t, tt.wantResult, task.Result)
 
 				// Verify logger was called (optional verification)
 				logOutput := buf.String()
 				assert.Assert(t, len(logOutput) > 0, "Expected log output")
-				assert.Assert(t, bytes.Contains(buf.Bytes(), []byte("test-id")), "Log should contain task ID")
+				assert.Assert(t, bytes.Contains(buf.Bytes(), []byte(task.ID)), "Log should contain task ID")
 			}
 		})
 	}

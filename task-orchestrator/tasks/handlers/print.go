@@ -36,6 +36,5 @@ func (h *PrintHandler) Run(task *tasks.Task) error {
 	})
 
 	task.Result = "printed: " + p.Message
-	task.Status = "done"
 	return nil
 }

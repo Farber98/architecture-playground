@@ -24,70 +24,83 @@ func TestSynchronousRunner_Run_WithRegisteredHandler(t *testing.T) {
 	reg := handlerRegistry.NewRegistry()
 	reg.Register("print", handlers.NewPrintHandler(testLogger))
 
-	runner := runners.NewSynchronousRunner(reg, testLogger)
+	runner := runners.NewSynchronousRunner(reg)
 
-	task := &tasks.Task{
-		ID:      "task-123",
-		Type:    "print",
-		Payload: json.RawMessage(`{"message":"Hello from runner test"}`),
-		Status:  "submitted",
-	}
+	// Use NewTask to create task with proper initial status
+	task := tasks.NewTask("print", json.RawMessage(`{"message":"Hello from runner test"}`))
+
+	// Simulate orchestrator setting task to running before calling runner
+	require.NoError(t, task.SetStatus(tasks.StatusRunning))
 
 	err := runner.Run(task)
 
 	require.NoError(t, err)
-	assert.Equal(t, "done", task.Status)
+	// Handler should have set the result, but status management is orchestrator's job
 	assert.Equal(t, "printed: Hello from runner test", task.Result)
+
+	// Status should still be running - orchestrator will set it to done
+	assert.Equal(t, tasks.StatusRunning, task.Status)
 }
 
 func TestSynchronousRunner_Run_UnregisteredType(t *testing.T) {
-	// Create test logger
-	var buf bytes.Buffer
-	testLogger := logger.New("DEBUG", &buf)
-
 	reg := handlerRegistry.NewRegistry()
-	runner := runners.NewSynchronousRunner(reg, testLogger)
+	runner := runners.NewSynchronousRunner(reg)
 
-	task := &tasks.Task{
-		ID:      "unknown-task-id",
-		Type:    "unknown",
-		Payload: json.RawMessage(`{}`),
-		Status:  "submitted",
-	}
+	// Use NewTask to create task with proper initial status
+	task := tasks.NewTask("unknown", json.RawMessage(`{}`))
+
+	// Simulate orchestrator setting task to running before calling runner
+	require.NoError(t, task.SetStatus(tasks.StatusRunning))
 
 	err := runner.Run(task)
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "no handler registered")
 
-	// Task status should be updated to failed
-	assert.Equal(t, "failed", task.Status)
-	require.Contains(t, task.Result, "no handler registered for task type")
+	// Runner doesn't set status or result - orchestrator will handle it
+	assert.Equal(t, tasks.StatusRunning, task.Status) // Still running
+	assert.Equal(t, "", task.Result)                  // No result set by runner
+
+	// Error should be a NotFoundError
+	taskErr, ok := errors.IsTaskError(err)
+	require.True(t, ok, "expected TaskError")
+	assert.Equal(t, errors.NotFoundError, taskErr.Type)
 }
 
+// Updated test handlers to follow orchestrator-managed pattern
 // ErroringHandler is a test handler that always returns an error
 type ErroringHandler struct {
 	ErrorToReturn error
+	SetResult     bool   // Whether to set task.Result
+	CustomResult  string // Custom result to set
 }
 
 func (e *ErroringHandler) Run(task *tasks.Task) error {
+	// Follow proper state transitions (orchestrator set to running already)
+	if e.SetResult {
+		task.Result = e.CustomResult
+	}
+	// Don't set status - let orchestrator handle it
 	return e.ErrorToReturn
 }
 
 // TaskErrorHandler returns a structured TaskError
 type TaskErrorHandler struct {
-	TaskError *errors.TaskError
+	TaskError    *errors.TaskError
+	SetResult    bool   // Whether to set task.Result
+	CustomResult string // Custom result to set
 }
 
 func (t *TaskErrorHandler) Run(task *tasks.Task) error {
+	// Follow proper state transitions (orchestrator set to running already)
+	if t.SetResult {
+		task.Result = t.CustomResult
+	}
+	// Don't set status - let orchestrator handle it
 	return t.TaskError
 }
 
 func TestSynchronousRunner_Run_HandlerReturnsTaskError(t *testing.T) {
-	// Create test logger
-	var buf bytes.Buffer
-	testLogger := logger.New("DEBUG", &buf)
-
 	// Test that structured TaskErrors are preserved
 	reg := handlerRegistry.NewRegistry()
 
@@ -95,15 +108,18 @@ func TestSynchronousRunner_Run_HandlerReturnsTaskError(t *testing.T) {
 		"field": "missing_value",
 	})
 
-	reg.Register("failing", &TaskErrorHandler{TaskError: expectedError})
-	runner := runners.NewSynchronousRunner(reg, testLogger)
+	reg.Register("failing", &TaskErrorHandler{
+		TaskError:    expectedError,
+		SetResult:    true,
+		CustomResult: "handler set this error result",
+	})
+	runner := runners.NewSynchronousRunner(reg)
 
-	task := &tasks.Task{
-		ID:      "failing-task",
-		Type:    "failing",
-		Payload: json.RawMessage(`{}`),
-		Status:  "submitted",
-	}
+	// Use NewTask to create task with proper initial status
+	task := tasks.NewTask("failing", json.RawMessage(`{}`))
+
+	// Simulate orchestrator setting task to running before calling runner
+	require.NoError(t, task.SetStatus(tasks.StatusRunning))
 
 	err := runner.Run(task)
 
@@ -116,29 +132,29 @@ func TestSynchronousRunner_Run_HandlerReturnsTaskError(t *testing.T) {
 	assert.Equal(t, "invalid payload", taskErr.Message)
 	assert.Equal(t, "missing_value", taskErr.Details["field"])
 
-	// Task status should be updated to failed when handler returns error
-	assert.Equal(t, "failed", task.Status)
-	require.Contains(t, task.Result, "task execution failed:")
+	// Runner doesn't set status - orchestrator will handle it
+	assert.Equal(t, tasks.StatusRunning, task.Status) // Still running
+
+	// Handler set the result
+	assert.Equal(t, "handler set this error result", task.Result)
 }
 
 func TestSynchronousRunner_Run_HandlerReturnsGenericError(t *testing.T) {
-	// Create test logger
-	var buf bytes.Buffer
-	testLogger := logger.New("DEBUG", &buf)
-
 	// Test that generic errors are wrapped as ExecutionErrors
 	reg := handlerRegistry.NewRegistry()
 
-	genericError := fmt.Errorf("an error")
-	reg.Register("erroring-task", &ErroringHandler{ErrorToReturn: genericError})
-	runner := runners.NewSynchronousRunner(reg, testLogger)
+	genericError := fmt.Errorf("database connection failed")
+	reg.Register("erroring-task", &ErroringHandler{
+		ErrorToReturn: genericError,
+		SetResult:     false, // Don't set result - let orchestrator handle it
+	})
+	runner := runners.NewSynchronousRunner(reg)
 
-	task := &tasks.Task{
-		ID:      "erroring-task-123",
-		Type:    "erroring-task",
-		Payload: json.RawMessage(`{"erroring":"task"}`),
-		Status:  "submitted",
-	}
+	// Use NewTask to create task with proper initial status
+	task := tasks.NewTask("erroring-task", json.RawMessage(`{"erroring":"task"}`))
+
+	// Simulate orchestrator setting task to running before calling runner
+	require.NoError(t, task.SetStatus(tasks.StatusRunning))
 
 	err := runner.Run(task)
 
@@ -151,11 +167,36 @@ func TestSynchronousRunner_Run_HandlerReturnsGenericError(t *testing.T) {
 	assert.ErrorContains(t, err, "task execution failed")
 
 	// Verify error details include context
-	assert.Equal(t, "erroring-task-123", taskErr.Details["task_id"])
+	assert.Equal(t, task.ID, taskErr.Details["task_id"])
 	assert.Equal(t, "erroring-task", taskErr.Details["task_type"])
-	assert.Equal(t, "an error", taskErr.Details["error"])
+	assert.Equal(t, "database connection failed", taskErr.Details["error"])
 
-	// Task status should be updated to failed
-	assert.Equal(t, "failed", task.Status)
-	require.Contains(t, task.Result, "task execution failed")
+	// Runner doesn't set status or result - orchestrator will handle it
+	assert.Equal(t, tasks.StatusRunning, task.Status) // Still running
+	assert.Equal(t, "", task.Result)                  // No result set
+}
+
+// Add test for successful handler that sets result
+func TestSynchronousRunner_Run_HandlerSetsResult(t *testing.T) {
+	reg := handlerRegistry.NewRegistry()
+	reg.Register("success", &ErroringHandler{
+		ErrorToReturn: nil, // Success case
+		SetResult:     true,
+		CustomResult:  "handler completed successfully",
+	})
+	runner := runners.NewSynchronousRunner(reg)
+
+	// Use NewTask to create task with proper initial status
+	task := tasks.NewTask("success", json.RawMessage(`{"test":"data"}`))
+
+	// Simulate orchestrator setting task to running before calling runner
+	require.NoError(t, task.SetStatus(tasks.StatusRunning))
+
+	err := runner.Run(task)
+
+	require.NoError(t, err)
+
+	// Handler set the result, status remains running (orchestrator will set to done)
+	assert.Equal(t, "handler completed successfully", task.Result)
+	assert.Equal(t, tasks.StatusRunning, task.Status)
 }

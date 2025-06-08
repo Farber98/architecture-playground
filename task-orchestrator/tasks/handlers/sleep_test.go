@@ -13,8 +13,6 @@ import (
 )
 
 // FakeSleeper is a test double for Sleeper.
-// It records the sleep duration without actually pausing execution.
-// NOTE: This type should only be used in test code.
 type fakeSleeper struct {
 	CalledWith time.Duration
 }
@@ -28,7 +26,6 @@ func TestSleepHandler_Run(t *testing.T) {
 		name              string
 		payload           string
 		wantErr           bool
-		wantStatus        string
 		wantResult        string
 		wantErrContains   string
 		wantSleepCalled   bool
@@ -38,7 +35,6 @@ func TestSleepHandler_Run(t *testing.T) {
 			name:              "basic sleep - 1 second",
 			payload:           `{"seconds":1}`,
 			wantErr:           false,
-			wantStatus:        "done",
 			wantResult:        "slept: 1 seconds",
 			wantSleepCalled:   true,
 			wantSleepDuration: 1 * time.Second,
@@ -47,7 +43,6 @@ func TestSleepHandler_Run(t *testing.T) {
 			name:              "multiple seconds",
 			payload:           `{"seconds":2}`,
 			wantErr:           false,
-			wantStatus:        "done",
 			wantResult:        "slept: 2 seconds",
 			wantSleepCalled:   true,
 			wantSleepDuration: 2 * time.Second,
@@ -121,11 +116,7 @@ func TestSleepHandler_Run(t *testing.T) {
 				logger:  testLogger,
 			}
 
-			task := &tasks.Task{
-				ID:      "test-id",
-				Type:    "sleep",
-				Payload: json.RawMessage(tt.payload),
-			}
+			task := tasks.NewTask("sleep", json.RawMessage(tt.payload))
 
 			err := handler.Run(task)
 
@@ -138,7 +129,6 @@ func TestSleepHandler_Run(t *testing.T) {
 				assert.Equal(t, time.Duration(0), fakeSleeper.CalledWith)
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, tt.wantStatus, task.Status)
 				assert.Equal(t, tt.wantResult, task.Result)
 
 				// Verify sleep was called with correct duration
@@ -149,7 +139,7 @@ func TestSleepHandler_Run(t *testing.T) {
 				// Verify logger was called
 				logOutput := buf.String()
 				assert.Assert(t, len(logOutput) > 0, "Expected log output")
-				assert.Assert(t, bytes.Contains(buf.Bytes(), []byte("test-id")), "Log should contain task ID")
+				assert.Assert(t, bytes.Contains(buf.Bytes(), []byte(task.ID)), "Log should contain task ID")
 			}
 		})
 	}

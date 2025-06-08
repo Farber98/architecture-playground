@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"encoding/json"
 	"task-orchestrator/tasks"
 	"task-orchestrator/tasks/store"
 	"testing"
@@ -11,10 +12,11 @@ import (
 
 func newTestTask(id string) *tasks.Task {
 	return &tasks.Task{
-		ID:     id,
-		Type:   "print",
-		Status: "submitted",
-		Result: "",
+		ID:      id,
+		Type:    "print",
+		Status:  tasks.StatusSubmitted, // Use TaskStatus constant instead of string
+		Result:  "",
+		Payload: json.RawMessage(`{"message":"test"}`), // Add valid payload
 	}
 }
 
@@ -147,9 +149,8 @@ func TestMemoryTaskStore_Get(t *testing.T) {
 				assert.Equal(t, tc.expectTask.Result, got.Result)
 
 				if tc.checkIsCopy {
-					// Mutate the retrieved task
-					got.Status = "hacked"
-					got.Result = "oops"
+					got.Status = tasks.StatusDone
+					got.Result = "modified copy"
 
 					// Get the task again from the store
 					original, errGetAgain := s.Get(tc.idToGet)
@@ -169,21 +170,19 @@ func TestMemoryTaskStore_Get(t *testing.T) {
 func TestMemoryTaskStore_Update(t *testing.T) {
 	t.Parallel()
 	taskToUpdate := newTestTask("task-update-1")
-	initialStatus := taskToUpdate.Status
-	initialResult := taskToUpdate.Result
 
 	testCases := []struct {
 		name         string
 		storeSetup   func() *store.MemoryTaskStore
 		idToUpdate   string
-		newStatus    string
+		newStatus    tasks.TaskStatus
 		newResult    string
 		expectErr    bool
 		errContains  string
 		expectedTask *tasks.Task // Expected state after update
 	}{
 		{
-			name: "successful update",
+			name: "successful update: submitted to running",
 			storeSetup: func() *store.MemoryTaskStore {
 				s := store.NewMemoryTaskStore()
 				// Save a copy to avoid modifying taskToUpdate directly in setup
@@ -192,14 +191,35 @@ func TestMemoryTaskStore_Update(t *testing.T) {
 				return s
 			},
 			idToUpdate: "task-update-1",
-			newStatus:  "done",
-			newResult:  "updated successfully",
+			newStatus:  tasks.StatusRunning,
+			newResult:  "task is now running",
 			expectErr:  false,
 			expectedTask: &tasks.Task{
 				ID:     "task-update-1",
-				Type:   taskToUpdate.Type, // Type should not change on update
-				Status: "done",
-				Result: "updated successfully",
+				Type:   taskToUpdate.Type,
+				Status: tasks.StatusRunning,
+				Result: "task is now running",
+			},
+		},
+		{
+			name: "successful update: running to done",
+			storeSetup: func() *store.MemoryTaskStore {
+				s := store.NewMemoryTaskStore()
+				// Create task and advance it to running state
+				task := newTestTask("task-update-1")
+				require.NoError(t, s.Save(task))
+				require.NoError(t, s.Update("task-update-1", tasks.StatusRunning, "now running"))
+				return s
+			},
+			idToUpdate: "task-update-1",
+			newStatus:  tasks.StatusDone,
+			newResult:  "task completed successfully",
+			expectErr:  false,
+			expectedTask: &tasks.Task{
+				ID:     "task-update-1",
+				Type:   taskToUpdate.Type,
+				Status: tasks.StatusDone,
+				Result: "task completed successfully",
 			},
 		},
 		{
@@ -208,13 +228,13 @@ func TestMemoryTaskStore_Update(t *testing.T) {
 				return store.NewMemoryTaskStore()
 			},
 			idToUpdate:  "missing-id",
-			newStatus:   "done",
+			newStatus:   tasks.StatusDone,
 			newResult:   "noop",
 			expectErr:   true,
 			errContains: "not found",
 		},
 		{
-			name: "update with no actual change in status or result", // Verifies it still works
+			name: "store trusts orchestrator: submitted to done (previously invalid)",
 			storeSetup: func() *store.MemoryTaskStore {
 				s := store.NewMemoryTaskStore()
 				taskCopy := *taskToUpdate
@@ -222,14 +242,54 @@ func TestMemoryTaskStore_Update(t *testing.T) {
 				return s
 			},
 			idToUpdate: "task-update-1",
-			newStatus:  initialStatus, // Same as original
-			newResult:  initialResult, // Same as original
+			newStatus:  tasks.StatusDone,
+			newResult:  "orchestrator managed this transition",
 			expectErr:  false,
 			expectedTask: &tasks.Task{
 				ID:     "task-update-1",
 				Type:   taskToUpdate.Type,
-				Status: initialStatus,
-				Result: initialResult,
+				Status: tasks.StatusDone,
+				Result: "orchestrator managed this transition",
+			},
+		},
+		{
+			name: "store trusts orchestrator: same status update",
+			storeSetup: func() *store.MemoryTaskStore {
+				s := store.NewMemoryTaskStore()
+				taskCopy := *taskToUpdate
+				require.NoError(t, s.Save(&taskCopy))
+				return s
+			},
+			idToUpdate: "task-update-1",
+			newStatus:  tasks.StatusSubmitted, // Same as original
+			newResult:  "orchestrator says this is fine",
+			expectErr:  false,
+			expectedTask: &tasks.Task{
+				ID:     "task-update-1",
+				Type:   taskToUpdate.Type,
+				Status: tasks.StatusSubmitted,
+				Result: "orchestrator says this is fine",
+			},
+		},
+		{
+			name: "store trusts orchestrator: any transition",
+			storeSetup: func() *store.MemoryTaskStore {
+				s := store.NewMemoryTaskStore()
+				task := newTestTask("task-update-1")
+				// Set to done first
+				task.Status = tasks.StatusDone
+				require.NoError(t, s.Save(task))
+				return s
+			},
+			idToUpdate: "task-update-1",
+			newStatus:  tasks.StatusRunning, // "Backwards" transition
+			newResult:  "orchestrator manages all transitions",
+			expectErr:  false,
+			expectedTask: &tasks.Task{
+				ID:     "task-update-1",
+				Type:   taskToUpdate.Type,
+				Status: tasks.StatusRunning,
+				Result: "orchestrator manages all transitions",
 			},
 		},
 	}

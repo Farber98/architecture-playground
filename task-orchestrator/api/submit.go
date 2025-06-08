@@ -99,7 +99,7 @@ func NewSubmitHandler(orch orchestrator.Orchestrator, lg *logger.Logger) http.Ha
 
 		resp := SubmitResponse{
 			TaskID: task.ID,
-			Status: task.Status,
+			Status: task.Status.String(),
 			Result: task.Result,
 		}
 

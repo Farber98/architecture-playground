@@ -7,6 +7,7 @@ import (
 	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
 	"task-orchestrator/tasks/orchestrator"
+	"task-orchestrator/tasks/runners"
 	"task-orchestrator/tasks/store"
 	"testing"
 
@@ -22,9 +23,12 @@ type fakeRunner struct {
 
 func (r *fakeRunner) Run(task *tasks.Task) error {
 	if r.shouldFail {
+		// Just set error result and return error - let orchestrator handle status
+		task.Result = r.errorMsg
 		return errors.New(r.errorMsg)
 	}
-	task.Status = "completed"
+
+	// Just set success result - let orchestrator handle status
 	task.Result = "executed successfully"
 	return nil
 }
@@ -51,7 +55,7 @@ func (s *fakeStore) Get(id string) (*tasks.Task, error) {
 	return s.TaskStore.Get(id)
 }
 
-func (s *fakeStore) Update(id string, status string, result string) error {
+func (s *fakeStore) Update(id string, status tasks.TaskStatus, result string) error {
 	if s.shouldFailUpdate {
 		return errors.New("store update failed")
 	}
@@ -69,7 +73,7 @@ func TestOrchestrator_SubmitTask(t *testing.T) {
 		storeSetup     func() store.TaskStore
 		expectErr      bool
 		errContains    string
-		expectedStatus string
+		expectedStatus tasks.TaskStatus
 		expectedResult string
 	}{
 		{
@@ -83,7 +87,7 @@ func TestOrchestrator_SubmitTask(t *testing.T) {
 				return store.NewMemoryTaskStore()
 			},
 			expectErr:      false,
-			expectedStatus: "completed",
+			expectedStatus: tasks.StatusDone,
 			expectedResult: "executed successfully",
 		},
 		{
@@ -142,7 +146,7 @@ func TestOrchestrator_SubmitTask(t *testing.T) {
 				return store.NewMemoryTaskStore()
 			},
 			expectErr:      false, // Orchestrator doesn't validate task type
-			expectedStatus: "completed",
+			expectedStatus: tasks.StatusDone,
 			expectedResult: "executed successfully",
 		},
 		{
@@ -156,7 +160,7 @@ func TestOrchestrator_SubmitTask(t *testing.T) {
 				return store.NewMemoryTaskStore()
 			},
 			expectErr:      false,
-			expectedStatus: "completed",
+			expectedStatus: tasks.StatusDone,
 			expectedResult: "executed successfully",
 		},
 	}
@@ -206,35 +210,35 @@ func TestOrchestrator_GetTask(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name        string
-		taskID      string
-		storeSetup  func() store.TaskStore
-		expectErr   bool
-		errContains string
-		expectTask  *tasks.Task
+		name         string
+		setupTask    func(store store.TaskStore) string // Returns task ID
+		taskID       string                             // For cases where we don't create a task
+		storeSetup   func() store.TaskStore
+		expectErr    bool
+		errContains  string
+		validateTask func(t *testing.T, task *tasks.Task) // Custom validation
 	}{
 		{
-			name:   "successful get existing task",
-			taskID: "existing-task",
-			storeSetup: func() store.TaskStore {
-				taskStore := store.NewMemoryTaskStore()
-				task := &tasks.Task{
-					ID:      "existing-task",
-					Type:    "print",
-					Status:  "completed",
-					Result:  "done",
-					Payload: json.RawMessage(`{"message":"test"}`),
-				}
+			name: "successful get existing task",
+			setupTask: func(taskStore store.TaskStore) string {
+				// Create task using NewTask (which auto-generates ID)
+				task := tasks.NewTask("print", json.RawMessage(`{"message":"test"}`))
+				require.NoError(t, task.SetStatus(tasks.StatusRunning))
+				require.NoError(t, task.SetStatus(tasks.StatusDone))
+				task.Result = "done"
 				require.NoError(t, taskStore.Save(task))
-				return taskStore
+				return task.ID
+			},
+			storeSetup: func() store.TaskStore {
+				return store.NewMemoryTaskStore()
 			},
 			expectErr: false,
-			expectTask: &tasks.Task{
-				ID:      "existing-task",
-				Type:    "print",
-				Status:  "completed",
-				Result:  "done",
-				Payload: json.RawMessage(`{"message":"test"}`),
+			validateTask: func(t *testing.T, task *tasks.Task) {
+				assert.NotEmpty(t, task.ID)
+				assert.Equal(t, "print", task.Type)
+				assert.Equal(t, tasks.StatusDone, task.Status)
+				assert.Equal(t, "done", task.Result)
+				assert.Equal(t, json.RawMessage(`{"message":"test"}`), task.Payload)
 			},
 		},
 		{
@@ -279,9 +283,18 @@ func TestOrchestrator_GetTask(t *testing.T) {
 
 			runner := &fakeRunner{}
 			taskStore := tc.storeSetup()
+
+			// Setup task if needed
+			var taskID string
+			if tc.setupTask != nil {
+				taskID = tc.setupTask(taskStore)
+			} else {
+				taskID = tc.taskID
+			}
+
 			orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
 
-			task, err := orch.GetTask(tc.taskID)
+			task, err := orch.GetTask(taskID)
 
 			if tc.expectErr {
 				require.Error(t, err)
@@ -292,12 +305,8 @@ func TestOrchestrator_GetTask(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				require.NotNil(t, task)
-				if tc.expectTask != nil {
-					assert.Equal(t, tc.expectTask.ID, task.ID)
-					assert.Equal(t, tc.expectTask.Type, task.Type)
-					assert.Equal(t, tc.expectTask.Status, task.Status)
-					assert.Equal(t, tc.expectTask.Result, task.Result)
-					assert.Equal(t, tc.expectTask.Payload, task.Payload)
+				if tc.validateTask != nil {
+					tc.validateTask(t, task)
 				}
 			}
 		})
@@ -322,10 +331,22 @@ func TestOrchestrator_LoggingIntegration(t *testing.T) {
 
 	// Verify that logs were written
 	logOutput := buf.String()
+
+	// Check all expected log messages from successful execution
 	assert.Contains(t, logOutput, "task submitted")
-	assert.Contains(t, logOutput, "running task")
-	assert.Contains(t, logOutput, "task completed successfully")
-	assert.Contains(t, logOutput, task.ID) // Task ID should appear in logs
+	assert.Contains(t, logOutput, "task completed")
+	assert.Contains(t, logOutput, task.ID)                         // Task ID should appear in logs
+	assert.Contains(t, logOutput, "print")                         // Task type should appear
+	assert.Contains(t, logOutput, "*orchestrator_test.fakeRunner") // Runner type
+	assert.Contains(t, logOutput, "done")                          // Final status
+
+	// Verify specific log structure
+	assert.Contains(t, logOutput, "payload_size")
+	assert.Contains(t, logOutput, "status")
+
+	// Should NOT contain error logs
+	assert.NotContains(t, logOutput, "execution failed")
+	assert.NotContains(t, logOutput, "failed to update")
 }
 
 func TestOrchestrator_StoreUpdateFailureDoesNotFailExecution(t *testing.T) {
@@ -349,12 +370,18 @@ func TestOrchestrator_StoreUpdateFailureDoesNotFailExecution(t *testing.T) {
 	require.NotNil(t, task)
 
 	// Verify task was executed (runner set status/result)
-	assert.Equal(t, "completed", task.Status)
+	assert.Equal(t, tasks.StatusDone, task.Status)
 	assert.Equal(t, "executed successfully", task.Result)
 
 	// Verify warning was logged about update failure
 	logOutput := buf.String()
-	assert.Contains(t, logOutput, "failed to update final task state")
+	assert.Contains(t, logOutput, "task submitted")
+	assert.Contains(t, logOutput, "failed to update running status")   // First update failure
+	assert.Contains(t, logOutput, "failed to update final task state") // Final update failure
+	assert.Contains(t, logOutput, "store update failed")               // Error details
+
+	// Should still contain success indicators despite store failures
+	assert.Contains(t, logOutput, "done") // Final status should be logged
 }
 
 func TestOrchestrator_TaskIDGeneration(t *testing.T) {
@@ -408,8 +435,12 @@ func TestOrchestrator_RunnerFailureUpdatesStore(t *testing.T) {
 
 	// Verify logs show the failure
 	logOutput := buf.String()
-	assert.Contains(t, logOutput, "task execution failed")
-	assert.Contains(t, logOutput, "runner failed")
+	assert.Contains(t, logOutput, "task submitted")   // Initial submission
+	assert.Contains(t, logOutput, "execution failed") // Runner failure
+	assert.Contains(t, logOutput, "runner failed")    // Specific error message
+
+	// Should NOT contain success logs
+	assert.NotContains(t, logOutput, "task completed")
 }
 
 func TestOrchestrator_GetTaskStatus(t *testing.T) {
@@ -417,63 +448,73 @@ func TestOrchestrator_GetTaskStatus(t *testing.T) {
 
 	testCases := []struct {
 		name           string
-		taskID         string
+		setupTask      func(store store.TaskStore) string // Returns task ID
+		taskID         string                             // For cases where we don't create a task
 		storeSetup     func() store.TaskStore
 		expectErr      bool
 		errContains    string
-		expectedStatus string
+		expectedStatus string // GetTaskStatus returns string
 	}{
 		{
-			name:   "successful get status for existing task",
-			taskID: "status-task-1",
-			storeSetup: func() store.TaskStore {
-				taskStore := store.NewMemoryTaskStore()
-				task := &tasks.Task{
-					ID:      "status-task-1",
-					Type:    "print",
-					Status:  "completed",
-					Result:  "task done",
-					Payload: json.RawMessage(`{"message":"test"}`),
-				}
+			name: "successful get status for existing task",
+			setupTask: func(taskStore store.TaskStore) string {
+				task := tasks.NewTask("print", json.RawMessage(`{"message":"test"}`))
+				require.NoError(t, task.SetStatus(tasks.StatusRunning))
+				require.NoError(t, task.SetStatus(tasks.StatusDone))
+				task.Result = "task done"
 				require.NoError(t, taskStore.Save(task))
-				return taskStore
+				return task.ID
+			},
+			storeSetup: func() store.TaskStore {
+				return store.NewMemoryTaskStore()
 			},
 			expectErr:      false,
-			expectedStatus: "completed",
+			expectedStatus: tasks.StatusDone.String(),
 		},
 		{
-			name:   "get status for running task",
-			taskID: "status-task-2",
-			storeSetup: func() store.TaskStore {
-				taskStore := store.NewMemoryTaskStore()
-				task := &tasks.Task{
-					ID:     "status-task-2",
-					Type:   "sleep",
-					Status: "running",
-					Result: "",
-				}
+			name: "get status for running task",
+			setupTask: func(taskStore store.TaskStore) string {
+				task := tasks.NewTask("sleep", json.RawMessage(`{}`))
+				require.NoError(t, task.SetStatus(tasks.StatusRunning))
+				task.Result = ""
 				require.NoError(t, taskStore.Save(task))
-				return taskStore
+				return task.ID
+			},
+			storeSetup: func() store.TaskStore {
+				return store.NewMemoryTaskStore()
 			},
 			expectErr:      false,
-			expectedStatus: "running",
+			expectedStatus: tasks.StatusRunning.String(),
 		},
 		{
-			name:   "get status for failed task",
-			taskID: "status-task-3",
-			storeSetup: func() store.TaskStore {
-				taskStore := store.NewMemoryTaskStore()
-				task := &tasks.Task{
-					ID:     "status-task-3",
-					Type:   "print",
-					Status: "failed",
-					Result: "execution error",
-				}
+			name: "get status for failed task",
+			setupTask: func(taskStore store.TaskStore) string {
+				task := tasks.NewTask("print", json.RawMessage(`{}`))
+				require.NoError(t, task.SetStatus(tasks.StatusRunning))
+				require.NoError(t, task.SetStatus(tasks.StatusFailed))
+				task.Result = "execution error"
 				require.NoError(t, taskStore.Save(task))
-				return taskStore
+				return task.ID
+			},
+			storeSetup: func() store.TaskStore {
+				return store.NewMemoryTaskStore()
 			},
 			expectErr:      false,
-			expectedStatus: "failed",
+			expectedStatus: tasks.StatusFailed.String(),
+		},
+		{
+			name: "get status for submitted task",
+			setupTask: func(taskStore store.TaskStore) string {
+				task := tasks.NewTask("print", json.RawMessage(`{}`))
+				// Status is already StatusSubmitted from NewTask
+				require.NoError(t, taskStore.Save(task))
+				return task.ID
+			},
+			storeSetup: func() store.TaskStore {
+				return store.NewMemoryTaskStore()
+			},
+			expectErr:      false,
+			expectedStatus: tasks.StatusSubmitted.String(),
 		},
 		{
 			name:   "get status for non-existing task",
@@ -505,9 +546,18 @@ func TestOrchestrator_GetTaskStatus(t *testing.T) {
 
 			runner := &fakeRunner{}
 			taskStore := tc.storeSetup()
+
+			// Setup task if needed
+			var taskID string
+			if tc.setupTask != nil {
+				taskID = tc.setupTask(taskStore)
+			} else {
+				taskID = tc.taskID
+			}
+
 			orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
 
-			status, err := orch.GetTaskStatus(tc.taskID)
+			status, err := orch.GetTaskStatus(taskID)
 
 			if tc.expectErr {
 				require.Error(t, err)
@@ -521,4 +571,82 @@ func TestOrchestrator_GetTaskStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOrchestrator_ResultHandling_Comprehensive(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name           string
+		runnerSetup    func() runners.Runner
+		expectedResult string
+		expectErr      bool
+	}{
+		{
+			name: "handler fails without setting result - orchestrator sets generic error result",
+			runnerSetup: func() runners.Runner {
+				return &fakeRunnerNoResult{
+					shouldFail: true,
+					errorMsg:   "database timeout",
+				}
+			},
+			expectedResult: "execution failed: database timeout",
+			expectErr:      true,
+		},
+		{
+			name: "handler fails with custom result - orchestrator preserves it",
+			runnerSetup: func() runners.Runner {
+				return &fakeRunner{
+					shouldFail: true,
+					errorMsg:   "runner failed", // This gets set as result
+				}
+			},
+			expectedResult: "runner failed", // Preserved from handler
+			expectErr:      true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			testLogger := logger.New("DEBUG", &buf)
+
+			taskStore := store.NewMemoryTaskStore()
+			orch := orchestrator.NewOrchestrator(taskStore, tc.runnerSetup(), testLogger)
+
+			task, err := orch.SubmitTask("test", json.RawMessage(`{"test":"data"}`))
+
+			if tc.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			require.NotNil(t, task)
+			assert.Equal(t, tc.expectedResult, task.Result)
+
+			// Verify persistence
+			savedTask, getErr := taskStore.Get(task.ID)
+			require.NoError(t, getErr)
+			assert.Equal(t, tc.expectedResult, savedTask.Result)
+		})
+	}
+}
+
+// fakeRunnerNoResult simulates a runner that fails without setting task.Result
+type fakeRunnerNoResult struct {
+	shouldFail bool
+	errorMsg   string
+}
+
+func (r *fakeRunnerNoResult) Run(task *tasks.Task) error {
+	if r.shouldFail {
+		// Don't set task.Result - let orchestrator handle it
+		return errors.New(r.errorMsg)
+	}
+
+	task.Result = "executed successfully"
+	return nil
 }

@@ -41,7 +41,7 @@ func main() {
 
 	// Create task store, runner and wire up orchestrator
 	store := store.NewMemoryTaskStore()
-	runner := runners.NewSynchronousRunner(registry, lg)
+	runner := runners.NewSynchronousRunner(registry)
 	orchestrator := orchestrator.NewOrchestrator(store, runner, lg)
 
 	// Create HTTP mux and register routes
