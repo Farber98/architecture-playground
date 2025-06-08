@@ -6,8 +6,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"task-orchestrator/api"
+	"task-orchestrator/api/middleware"
 	"task-orchestrator/config"
 	"task-orchestrator/logger"
+	"task-orchestrator/tasks/orchestrator"
+	handlerRegistry "task-orchestrator/tasks/registry"
 	"time"
 )
 
@@ -18,8 +22,26 @@ type Server struct {
 	logger     *logger.Logger
 }
 
-// New creates a new server with the given handler and configuration
-func New(handler http.Handler, cfg *config.Config, lg *logger.Logger) *Server {
+// dependencies contains all the dependencies needed to create a server
+type dependencies struct {
+	orchestrator orchestrator.Orchestrator
+	registry     *handlerRegistry.HandlerRegistry
+	config       *config.Config
+	logger       *logger.Logger
+}
+
+// New creates a new server with all HTTP configuration
+func New(orch orchestrator.Orchestrator, registry *handlerRegistry.HandlerRegistry, cfg *config.Config, lg *logger.Logger) *Server {
+	deps := &dependencies{
+		orchestrator: orch,
+		registry:     registry,
+		config:       cfg,
+		logger:       lg,
+	}
+
+	// Create router with all routes and middleware
+	handler := newRouter(deps)
+
 	return &Server{
 		httpServer: &http.Server{
 			Addr:         cfg.Address(),
@@ -31,6 +53,31 @@ func New(handler http.Handler, cfg *config.Config, lg *logger.Logger) *Server {
 		config: cfg,
 		logger: lg,
 	}
+}
+
+// NewRouter creates and configures the HTTP router with all routes and middleware
+func newRouter(deps *dependencies) http.Handler {
+	// Create HTTP mux and register routes
+	mux := http.NewServeMux()
+
+	// Register API routes
+	mux.HandleFunc("/submit", api.NewSubmitHandler(deps.orchestrator, deps.logger))
+	mux.HandleFunc("/health", api.NewHealthHandler(deps.config, deps.registry, deps.logger))
+	mux.HandleFunc("/tasks/", api.NewTaskStatusHandler(deps.orchestrator, deps.logger))
+
+	// Encapsulate middleware configuration
+	return applyMiddleware(mux, deps.logger)
+}
+
+// applyMiddleware wraps the handler with all necessary middleware
+func applyMiddleware(handler http.Handler, lg *logger.Logger) http.Handler {
+	// Apply middleware in reverse order (last applied = first executed)
+	wrapped := handler
+
+	// Request logging middleware
+	wrapped = middleware.LoggingMiddleware(lg)(wrapped)
+
+	return wrapped
 }
 
 // Start starts the server and blocks until shutdown
