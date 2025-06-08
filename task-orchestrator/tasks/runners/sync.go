@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+var _ Runner = (*SynchronousRunner)(nil)
+
 // SynchronousRunner executes tasks in-process and blocks until completion.
 // This implementation is used in V1 to provide minimal orchestration overhead.
 // It delegates execution to the appropriate TaskHandler based on task.Type,

@@ -7,6 +7,8 @@ import (
 	"task-orchestrator/tasks"
 )
 
+var _ tasks.TaskHandler = (*PrintHandler)(nil)
+
 // PrintHandler executes a "print" task by logging the provided message.
 type PrintHandler struct {
 	logger *logger.Logger

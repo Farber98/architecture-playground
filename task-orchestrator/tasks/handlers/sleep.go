@@ -24,6 +24,8 @@ func (s *realSleeper) Sleep(d time.Duration) {
 	time.Sleep(d)
 }
 
+var _ tasks.TaskHandler = (*SleepHandler)(nil)
+
 // SleepHandler pauses execution for the specified number of seconds.
 type SleepHandler struct {
 	sleeper Sleeper

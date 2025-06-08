@@ -11,6 +11,7 @@ import (
 	"task-orchestrator/tasks"
 	taskHandlers "task-orchestrator/tasks/handlers"
 	"task-orchestrator/tasks/runners"
+	"task-orchestrator/tasks/store"
 )
 
 func main() {
@@ -36,6 +37,9 @@ func main() {
 		"count": len(registry.GetRegisteredTypes()),
 		"types": registry.GetRegisteredTypes(),
 	})
+
+	// Create task store
+	_ = store.NewMemoryTaskStore()
 
 	// Set up HTTP Handler
 	runner := runners.NewSynchronousRunner(registry, lg)
