@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"context"
 	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
 	"task-orchestrator/tasks/runners"
@@ -10,7 +11,7 @@ import (
 // This abstraction enables different execution strategies (sync, async, retry, etc.)
 // without changing the orchestrator's interface.
 type ExecutionWorkflow interface {
-	Execute(task *tasks.Task) error
+	Execute(ctx context.Context, task *tasks.Task) error
 }
 
 // DefaultExecutionWorkflow implements synchronous execution with proper error handling.
@@ -39,16 +40,16 @@ func NewDefaultExecutionWorkflow(
 }
 
 // Execute is isolated to enable future enhancement without breaking changes on the orchestrator. Contains error handling.
-func (w *DefaultExecutionWorkflow) Execute(task *tasks.Task) error {
+func (w *DefaultExecutionWorkflow) Execute(ctx context.Context, task *tasks.Task) error {
 	execCtx := NewExecutionContext(task)
 
 	// Prepare for execution by transitioning state to running
-	if err := w.stateManager.TransitionToRunning(execCtx); err != nil {
+	if err := w.stateManager.TransitionToRunning(ctx, execCtx); err != nil {
 		return err
 	}
 
 	// Execute the actual business logic via configured runner
-	if err := w.runner.Run(task); err != nil {
+	if err := w.runner.Run(ctx, task); err != nil {
 		w.logger.Task(task.ID, "execution failed", map[string]any{
 			"error": err.Error(),
 		})
@@ -58,7 +59,7 @@ func (w *DefaultExecutionWorkflow) Execute(task *tasks.Task) error {
 		w.resultHandler.HandleFailure(execCtx)
 
 		// Attempt state cleanup, but preserve the original execution error
-		if transitionErr := w.stateManager.TransitionToFailed(execCtx); transitionErr != nil {
+		if transitionErr := w.stateManager.TransitionToFailed(ctx, execCtx); transitionErr != nil {
 			w.logger.Error("failed to transition task to failed state", map[string]any{
 				"task_id":          task.ID,
 				"transition_error": transitionErr.Error(),
@@ -72,7 +73,7 @@ func (w *DefaultExecutionWorkflow) Execute(task *tasks.Task) error {
 
 	// Finalize successful execution
 	w.resultHandler.HandleSuccess(execCtx)
-	if err := w.stateManager.TransitionToCompleted(execCtx); err != nil {
+	if err := w.stateManager.TransitionToCompleted(ctx, execCtx); err != nil {
 		// Log state transition failures but don't fail the operation since the business logic succeeded
 		w.logger.Error("failed to transition task to completed state after successful execution", map[string]any{
 			"task_id": task.ID,

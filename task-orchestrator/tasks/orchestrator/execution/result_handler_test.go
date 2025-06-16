@@ -14,12 +14,12 @@ func TestDefaultResultHandler_HandleSuccess(t *testing.T) {
 	task := tasks.NewTask("test", nil)
 	task.Result = "existing result"
 
-	ctx := NewExecutionContext(task)
-	handler.HandleSuccess(ctx)
+	execCtx := NewExecutionContext(task)
+	handler.HandleSuccess(execCtx)
 
-	assert.True(t, ctx.IsSuccess())
+	assert.True(t, execCtx.IsSuccess())
 	assert.Equal(t, "existing result", task.Result)
-	assert.False(t, ctx.Metadata["has_error"].(bool))
+	assert.False(t, execCtx.Metadata["has_error"].(bool))
 }
 
 func TestDefaultResultHandler_HandleFailure_WithExistingResult(t *testing.T) {
@@ -27,10 +27,10 @@ func TestDefaultResultHandler_HandleFailure_WithExistingResult(t *testing.T) {
 	task := tasks.NewTask("test", nil)
 	task.Result = "custom error result"
 
-	ctx := NewExecutionContext(task)
-	ctx.SetError(errors.New("execution failed"))
+	execCtx := NewExecutionContext(task)
+	execCtx.SetError(errors.New("execution failed"))
 
-	handler.HandleFailure(ctx)
+	handler.HandleFailure(execCtx)
 
 	// Should NOT override existing result
 	assert.Equal(t, "custom error result", task.Result)
@@ -40,10 +40,10 @@ func TestDefaultResultHandler_HandleFailure_WithoutResult(t *testing.T) {
 	handler := NewDefaultResultHandler()
 	task := tasks.NewTask("test", nil)
 
-	ctx := NewExecutionContext(task)
-	ctx.SetError(errors.New("execution failed"))
+	execCtx := NewExecutionContext(task)
+	execCtx.SetError(errors.New("execution failed"))
 
-	handler.HandleFailure(ctx)
+	handler.HandleFailure(execCtx)
 
 	// Should set default error result
 	assert.Equal(t, "execution failed: execution failed", task.Result)
@@ -53,11 +53,11 @@ func TestDefaultResultHandler_HandleFailure_WithTaskError(t *testing.T) {
 	handler := NewDefaultResultHandler()
 	task := tasks.NewTask("test", nil)
 
-	ctx := NewExecutionContext(task)
+	execCtx := NewExecutionContext(task)
 	taskErr := taskErrors.NewValidationError("validation error")
-	ctx.SetError(taskErr)
+	execCtx.SetError(taskErr)
 
-	handler.HandleFailure(ctx)
+	handler.HandleFailure(execCtx)
 
 	// Should format task error properly
 	assert.Contains(t, task.Result, "validation")
@@ -69,10 +69,10 @@ func TestDefaultResultHandler_HandleFailure_EmptyTaskResult(t *testing.T) {
 	task := tasks.NewTask("test", nil)
 	assert.Equal(t, "", task.Result) // Verify starting state
 
-	ctx := NewExecutionContext(task)
-	ctx.SetError(errors.New("test error"))
+	execCtx := NewExecutionContext(task)
+	execCtx.SetError(errors.New("test error"))
 
-	handler.HandleFailure(ctx)
+	handler.HandleFailure(execCtx)
 
 	assert.NotEqual(t, "", task.Result)
 	assert.Contains(t, task.Result, "test error")
@@ -82,10 +82,10 @@ func TestDefaultResultHandler_HandleSuccess_SetsMetadata(t *testing.T) {
 	handler := NewDefaultResultHandler()
 	task := tasks.NewTask("test", nil)
 
-	ctx := NewExecutionContext(task)
-	handler.HandleSuccess(ctx)
+	execCtx := NewExecutionContext(task)
+	handler.HandleSuccess(execCtx)
 
-	assert.True(t, ctx.IsSuccess())
-	assert.False(t, ctx.Metadata["has_error"].(bool))
-	assert.False(t, ctx.EndTime.IsZero())
+	assert.True(t, execCtx.IsSuccess())
+	assert.False(t, execCtx.Metadata["has_error"].(bool))
+	assert.False(t, execCtx.EndTime.IsZero())
 }

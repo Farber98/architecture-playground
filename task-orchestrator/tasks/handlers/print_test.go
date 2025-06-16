@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
@@ -88,7 +89,7 @@ func TestPrintHandler_Run(t *testing.T) {
 
 			task := tasks.NewTask("print", json.RawMessage(tt.payload))
 
-			err := handler.Run(task)
+			err := handler.Run(context.Background(), task)
 
 			if tt.wantErr {
 				require.Error(t, err)

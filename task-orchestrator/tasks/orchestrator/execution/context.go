@@ -27,30 +27,30 @@ func NewExecutionContext(task *tasks.Task) *ExecutionContext {
 }
 
 // SetError captures failure details for consistent error handling across strategies.
-func (ctx *ExecutionContext) SetError(err error) {
-	ctx.Error = err
-	ctx.EndTime = time.Now()
-	ctx.Metadata["has_error"] = true
-	ctx.Metadata["error_type"] = fmt.Sprintf("%T", err)
+func (e *ExecutionContext) SetError(err error) {
+	e.Error = err
+	e.EndTime = time.Now()
+	e.Metadata["has_error"] = true
+	e.Metadata["error_type"] = fmt.Sprintf("%T", err)
 }
 
 // SetSuccess marks successful completion for monitoring and metrics collection.
-func (ctx *ExecutionContext) SetSuccess() {
-	ctx.EndTime = time.Now()
-	ctx.Metadata["has_error"] = false
+func (e *ExecutionContext) SetSuccess() {
+	e.EndTime = time.Now()
+	e.Metadata["has_error"] = false
 }
 
 // IsSuccess provides a simple way to check execution outcome.
-func (ctx *ExecutionContext) IsSuccess() bool {
-	return ctx.Error == nil
+func (e *ExecutionContext) IsSuccess() bool {
+	return e.Error == nil
 }
 
 // Duration calculates execution time
-func (ctx *ExecutionContext) Duration() time.Duration {
-	if ctx.EndTime.IsZero() {
+func (e *ExecutionContext) Duration() time.Duration {
+	if e.EndTime.IsZero() {
 		// For in-progress executions, show current elapsed time
-		return time.Since(ctx.StartTime)
+		return time.Since(e.StartTime)
 	}
 	// For completed executions, show fixed duration
-	return ctx.EndTime.Sub(ctx.StartTime)
+	return e.EndTime.Sub(e.StartTime)
 }

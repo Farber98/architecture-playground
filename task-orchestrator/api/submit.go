@@ -87,7 +87,7 @@ func NewSubmitHandler(orch orchestrator.Orchestrator, lg *logger.Logger) http.Ha
 			return
 		}
 
-		task, err := orch.SubmitTask(req.Type, req.Payload)
+		task, err := orch.SubmitTask(r.Context(), req.Type, req.Payload)
 		if err != nil {
 			if taskErr, ok := errors.IsTaskError(err); ok {
 				respondWithError(w, taskErr, lg)

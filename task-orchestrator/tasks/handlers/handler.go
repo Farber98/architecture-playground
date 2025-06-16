@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"task-orchestrator/tasks"
 )
 
@@ -9,5 +10,5 @@ import (
 // This allows task-specific logic (e.g. print, sleep) to be encapsulated
 // in modular handlers, decoupled from the task runner or transport layer.
 type TaskHandler interface {
-	Run(task *tasks.Task) error
+	Run(ctx context.Context, task *tasks.Task) error
 }

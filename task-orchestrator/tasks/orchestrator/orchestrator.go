@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"task-orchestrator/errors"
@@ -16,14 +17,14 @@ import (
 type Orchestrator interface {
 	// SubmitTask accepts user requests and ensures they are processed immediately.
 	// Returns the task even on execution failure to allow status inspection.
-	SubmitTask(taskType string, payload json.RawMessage) (*tasks.Task, error)
+	SubmitTask(ctx context.Context, taskType string, payload json.RawMessage) (*tasks.Task, error)
 
 	// GetTask retrieves a task by ID from the underlying storage.
-	GetTask(taskID string) (*tasks.Task, error)
+	GetTask(ctx context.Context, taskID string) (*tasks.Task, error)
 
 	// GetTaskStatus returns just the status of a task for lightweight queries.
 	// This is more efficient than GetTask when you only need the status.
-	GetTaskStatus(taskID string) (string, error)
+	GetTaskStatus(ctx context.Context, taskID string) (string, error)
 }
 
 // orchestrator separates API concerns from execution complexity.
@@ -57,11 +58,11 @@ func NewDefaultOrchestrator(
 }
 
 // SubmitTask creates and persists a task. It delegates execution to execution module.
-func (o *orchestrator) SubmitTask(taskType string, payload json.RawMessage) (*tasks.Task, error) {
+func (o *orchestrator) SubmitTask(ctx context.Context, taskType string, payload json.RawMessage) (*tasks.Task, error) {
 	task := tasks.NewTask(taskType, payload)
 
 	// Persist initial task state
-	if err := o.store.Save(task); err != nil {
+	if err := o.store.Save(ctx, task); err != nil {
 		o.logger.Task("failed to save task", task.ID, map[string]any{
 			"error": err.Error(),
 		})
@@ -74,7 +75,7 @@ func (o *orchestrator) SubmitTask(taskType string, payload json.RawMessage) (*ta
 	})
 
 	// Delegate execution
-	if err := o.executeTask(task); err != nil {
+	if err := o.executeTask(ctx, task); err != nil {
 		// Task execution failed, but we still return the task with its current state
 		return task, err
 	}
@@ -83,13 +84,13 @@ func (o *orchestrator) SubmitTask(taskType string, payload json.RawMessage) (*ta
 }
 
 // executeTask handles the execution using the configured workflow.
-func (o *orchestrator) executeTask(task *tasks.Task) error {
-	return o.workflow.Execute(task)
+func (o *orchestrator) executeTask(ctx context.Context, task *tasks.Task) error {
+	return o.workflow.Execute(ctx, task)
 }
 
 // GetTask retrieves a task by ID from the store.
-func (o *orchestrator) GetTask(taskID string) (*tasks.Task, error) {
-	task, err := o.store.Get(taskID)
+func (o *orchestrator) GetTask(ctx context.Context, taskID string) (*tasks.Task, error) {
+	task, err := o.store.Get(ctx, taskID)
 	if err != nil {
 		return nil, errors.NewNotFoundError(fmt.Sprintf("task %s not found", taskID))
 	}
@@ -99,8 +100,8 @@ func (o *orchestrator) GetTask(taskID string) (*tasks.Task, error) {
 // GetTaskStatus returns just the status of a task for lightweight queries.
 // This method is more efficient than GetTask when you only need the status,
 // as it avoids copying the entire task payload and result.
-func (o *orchestrator) GetTaskStatus(taskID string) (string, error) {
-	task, err := o.GetTask(taskID)
+func (o *orchestrator) GetTaskStatus(ctx context.Context, taskID string) (string, error) {
+	task, err := o.GetTask(ctx, taskID)
 	if err != nil {
 		return "", err
 	}

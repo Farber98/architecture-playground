@@ -2,6 +2,7 @@ package execution
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
@@ -16,8 +17,8 @@ type MockRunner struct {
 	mock.Mock
 }
 
-func (m *MockRunner) Run(task *tasks.Task) error {
-	args := m.Called(task)
+func (m *MockRunner) Run(ctx context.Context, task *tasks.Task) error {
+	args := m.Called(ctx, task)
 	return args.Error(0)
 }
 
@@ -26,18 +27,18 @@ type MockStateManager struct {
 	mock.Mock
 }
 
-func (m *MockStateManager) TransitionToRunning(ctx *ExecutionContext) error {
-	args := m.Called(ctx)
+func (m *MockStateManager) TransitionToRunning(ctx context.Context, execCtx *ExecutionContext) error {
+	args := m.Called(ctx, execCtx)
 	return args.Error(0)
 }
 
-func (m *MockStateManager) TransitionToFailed(ctx *ExecutionContext) error {
-	args := m.Called(ctx)
+func (m *MockStateManager) TransitionToFailed(ctx context.Context, execCtx *ExecutionContext) error {
+	args := m.Called(ctx, execCtx)
 	return args.Error(0)
 }
 
-func (m *MockStateManager) TransitionToCompleted(ctx *ExecutionContext) error {
-	args := m.Called(ctx)
+func (m *MockStateManager) TransitionToCompleted(ctx context.Context, execCtx *ExecutionContext) error {
+	args := m.Called(ctx, execCtx)
 	return args.Error(0)
 }
 
@@ -46,12 +47,12 @@ type MockResultHandler struct {
 	mock.Mock
 }
 
-func (m *MockResultHandler) HandleSuccess(ctx *ExecutionContext) {
-	m.Called(ctx)
+func (m *MockResultHandler) HandleSuccess(execCtx *ExecutionContext) {
+	m.Called(execCtx)
 }
 
-func (m *MockResultHandler) HandleFailure(ctx *ExecutionContext) {
-	m.Called(ctx)
+func (m *MockResultHandler) HandleFailure(execCtx *ExecutionContext) {
+	m.Called(execCtx)
 }
 
 func TestNewDefaultExecutionWorkflow(t *testing.T) {
@@ -82,12 +83,12 @@ func TestWorkflow_Execute_Success(t *testing.T) {
 	task := tasks.NewTask("test", nil)
 
 	// Setup expectations
-	stateManager.On("TransitionToRunning", mock.AnythingOfType("*execution.ExecutionContext")).Return(nil)
-	runner.On("Run", task).Return(nil)
+	stateManager.On("TransitionToRunning", context.Background(), mock.AnythingOfType("*execution.ExecutionContext")).Return(nil)
+	runner.On("Run", context.Background(), task).Return(nil)
 	resultHandler.On("HandleSuccess", mock.AnythingOfType("*execution.ExecutionContext"))
-	stateManager.On("TransitionToCompleted", mock.AnythingOfType("*execution.ExecutionContext")).Return(nil)
+	stateManager.On("TransitionToCompleted", context.Background(), mock.AnythingOfType("*execution.ExecutionContext")).Return(nil)
 
-	err := workflow.Execute(task)
+	err := workflow.Execute(context.Background(), task)
 
 	assert.NoError(t, err)
 
@@ -109,9 +110,9 @@ func TestWorkflow_Execute_TransitionToRunningError(t *testing.T) {
 	task := tasks.NewTask("test", nil)
 	transitionErr := errors.New("transition failed")
 
-	stateManager.On("TransitionToRunning", mock.AnythingOfType("*execution.ExecutionContext")).Return(transitionErr)
+	stateManager.On("TransitionToRunning", context.Background(), mock.AnythingOfType("*execution.ExecutionContext")).Return(transitionErr)
 
-	err := workflow.Execute(task)
+	err := workflow.Execute(context.Background(), task)
 
 	assert.Error(t, err)
 	assert.Equal(t, transitionErr, err)
@@ -137,16 +138,16 @@ func TestWorkflow_Execute_RunnerError(t *testing.T) {
 	runnerErr := errors.New("runner failed")
 
 	// Setup expectations
-	stateManager.On("TransitionToRunning", mock.AnythingOfType("*execution.ExecutionContext")).Return(nil)
-	runner.On("Run", task).Return(runnerErr)
-	resultHandler.On("HandleFailure", mock.MatchedBy(func(ctx *ExecutionContext) bool {
-		return ctx.Error == runnerErr
+	stateManager.On("TransitionToRunning", context.Background(), mock.AnythingOfType("*execution.ExecutionContext")).Return(nil)
+	runner.On("Run", context.Background(), task).Return(runnerErr)
+	resultHandler.On("HandleFailure", mock.MatchedBy(func(execCtx *ExecutionContext) bool {
+		return execCtx.Error == runnerErr
 	}))
-	stateManager.On("TransitionToFailed", mock.MatchedBy(func(ctx *ExecutionContext) bool {
-		return ctx.Error == runnerErr
+	stateManager.On("TransitionToFailed", context.Background(), mock.MatchedBy(func(execCtx *ExecutionContext) bool {
+		return execCtx.Error == runnerErr
 	})).Return(nil)
 
-	err := workflow.Execute(task)
+	err := workflow.Execute(context.Background(), task)
 
 	assert.Error(t, err)
 	assert.Equal(t, runnerErr, err)
@@ -175,11 +176,11 @@ func TestWorkflow_Execute_SuccessPathExecution(t *testing.T) {
 	// Track execution order
 	var executionOrder []string
 
-	stateManager.On("TransitionToRunning", mock.AnythingOfType("*execution.ExecutionContext")).Run(func(args mock.Arguments) {
+	stateManager.On("TransitionToRunning", context.Background(), mock.AnythingOfType("*execution.ExecutionContext")).Run(func(args mock.Arguments) {
 		executionOrder = append(executionOrder, "transition_running")
 	}).Return(nil)
 
-	runner.On("Run", task).Run(func(args mock.Arguments) {
+	runner.On("Run", context.Background(), task).Run(func(args mock.Arguments) {
 		executionOrder = append(executionOrder, "runner_execute")
 	}).Return(nil)
 
@@ -187,11 +188,11 @@ func TestWorkflow_Execute_SuccessPathExecution(t *testing.T) {
 		executionOrder = append(executionOrder, "handle_success")
 	})
 
-	stateManager.On("TransitionToCompleted", mock.AnythingOfType("*execution.ExecutionContext")).Run(func(args mock.Arguments) {
+	stateManager.On("TransitionToCompleted", context.Background(), mock.AnythingOfType("*execution.ExecutionContext")).Run(func(args mock.Arguments) {
 		executionOrder = append(executionOrder, "transition_completed")
 	}).Return(nil)
 
-	err := workflow.Execute(task)
+	err := workflow.Execute(context.Background(), task)
 
 	assert.NoError(t, err)
 
@@ -220,11 +221,11 @@ func TestWorkflow_Execute_FailurePathExecution(t *testing.T) {
 	// Track execution order
 	var executionOrder []string
 
-	stateManager.On("TransitionToRunning", mock.AnythingOfType("*execution.ExecutionContext")).Run(func(args mock.Arguments) {
+	stateManager.On("TransitionToRunning", context.Background(), mock.AnythingOfType("*execution.ExecutionContext")).Run(func(args mock.Arguments) {
 		executionOrder = append(executionOrder, "transition_running")
 	}).Return(nil)
 
-	runner.On("Run", task).Run(func(args mock.Arguments) {
+	runner.On("Run", context.Background(), task).Run(func(args mock.Arguments) {
 		executionOrder = append(executionOrder, "runner_execute")
 	}).Return(runnerErr)
 
@@ -232,11 +233,11 @@ func TestWorkflow_Execute_FailurePathExecution(t *testing.T) {
 		executionOrder = append(executionOrder, "handle_failure")
 	})
 
-	stateManager.On("TransitionToFailed", mock.AnythingOfType("*execution.ExecutionContext")).Run(func(args mock.Arguments) {
+	stateManager.On("TransitionToFailed", context.Background(), mock.AnythingOfType("*execution.ExecutionContext")).Run(func(args mock.Arguments) {
 		executionOrder = append(executionOrder, "transition_failed")
 	}).Return(nil)
 
-	err := workflow.Execute(task)
+	err := workflow.Execute(context.Background(), task)
 
 	assert.Error(t, err)
 	assert.Equal(t, runnerErr, err)
@@ -265,24 +266,24 @@ func TestWorkflow_Execute_ContextPropagation(t *testing.T) {
 	// Verify that the same context is passed through the pipeline
 	var capturedContexts []*ExecutionContext
 
-	stateManager.On("TransitionToRunning", mock.AnythingOfType("*execution.ExecutionContext")).Run(func(args mock.Arguments) {
-		ctx := args[0].(*ExecutionContext)
-		capturedContexts = append(capturedContexts, ctx)
+	stateManager.On("TransitionToRunning", context.Background(), mock.AnythingOfType("*execution.ExecutionContext")).Run(func(args mock.Arguments) {
+		execCtx := args[1].(*ExecutionContext)
+		capturedContexts = append(capturedContexts, execCtx)
 	}).Return(nil)
 
-	runner.On("Run", task).Return(nil)
+	runner.On("Run", context.Background(), task).Return(nil)
 
 	resultHandler.On("HandleSuccess", mock.AnythingOfType("*execution.ExecutionContext")).Run(func(args mock.Arguments) {
-		ctx := args[0].(*ExecutionContext)
-		capturedContexts = append(capturedContexts, ctx)
+		execCtx := args[0].(*ExecutionContext)
+		capturedContexts = append(capturedContexts, execCtx)
 	})
 
-	stateManager.On("TransitionToCompleted", mock.AnythingOfType("*execution.ExecutionContext")).Run(func(args mock.Arguments) {
-		ctx := args[0].(*ExecutionContext)
-		capturedContexts = append(capturedContexts, ctx)
+	stateManager.On("TransitionToCompleted", context.Background(), mock.AnythingOfType("*execution.ExecutionContext")).Run(func(args mock.Arguments) {
+		execCtx := args[1].(*ExecutionContext)
+		capturedContexts = append(capturedContexts, execCtx)
 	}).Return(nil)
 
-	err := workflow.Execute(task)
+	err := workflow.Execute(context.Background(), task)
 
 	assert.NoError(t, err)
 	assert.Len(t, capturedContexts, 3)
@@ -310,16 +311,16 @@ func TestWorkflow_Execute_TransitionToFailedError_LogsButReturnsOriginalError(t 
 	transitionErr := errors.New("transition to failed state failed")
 
 	// Setup expectations
-	stateManager.On("TransitionToRunning", mock.AnythingOfType("*execution.ExecutionContext")).Return(nil)
-	runner.On("Run", task).Return(runnerErr)
-	resultHandler.On("HandleFailure", mock.MatchedBy(func(ctx *ExecutionContext) bool {
-		return ctx.Error == runnerErr
+	stateManager.On("TransitionToRunning", context.Background(), mock.AnythingOfType("*execution.ExecutionContext")).Return(nil)
+	runner.On("Run", context.Background(), task).Return(runnerErr)
+	resultHandler.On("HandleFailure", mock.MatchedBy(func(execCtx *ExecutionContext) bool {
+		return execCtx.Error == runnerErr
 	}))
-	stateManager.On("TransitionToFailed", mock.MatchedBy(func(ctx *ExecutionContext) bool {
-		return ctx.Error == runnerErr
+	stateManager.On("TransitionToFailed", context.Background(), mock.MatchedBy(func(execCtx *ExecutionContext) bool {
+		return execCtx.Error == runnerErr
 	})).Return(transitionErr)
 
-	err := workflow.Execute(task)
+	err := workflow.Execute(context.Background(), task)
 
 	// Should return the original runner error, not the transition error
 	assert.Error(t, err)
@@ -351,12 +352,12 @@ func TestWorkflow_Execute_TransitionToCompletedError_LogsButContinues(t *testing
 	transitionErr := errors.New("transition to completed state failed")
 
 	// Setup expectations
-	stateManager.On("TransitionToRunning", mock.AnythingOfType("*execution.ExecutionContext")).Return(nil)
-	runner.On("Run", task).Return(nil)
+	stateManager.On("TransitionToRunning", context.Background(), mock.AnythingOfType("*execution.ExecutionContext")).Return(nil)
+	runner.On("Run", context.Background(), task).Return(nil)
 	resultHandler.On("HandleSuccess", mock.AnythingOfType("*execution.ExecutionContext"))
-	stateManager.On("TransitionToCompleted", mock.AnythingOfType("*execution.ExecutionContext")).Return(transitionErr)
+	stateManager.On("TransitionToCompleted", context.Background(), mock.AnythingOfType("*execution.ExecutionContext")).Return(transitionErr)
 
-	err := workflow.Execute(task)
+	err := workflow.Execute(context.Background(), task)
 
 	// Should NOT return error even though state transition failed
 	// because the actual execution was successful

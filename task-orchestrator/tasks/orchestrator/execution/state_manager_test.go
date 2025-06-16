@@ -2,6 +2,7 @@ package execution
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
@@ -16,30 +17,22 @@ type MockStore struct {
 	mock.Mock
 }
 
-func (m *MockStore) Save(task *tasks.Task) error {
-	args := m.Called(task)
+func (m *MockStore) Save(ctx context.Context, task *tasks.Task) error {
+	args := m.Called(ctx, task)
 	return args.Error(0)
 }
 
-func (m *MockStore) Get(id string) (*tasks.Task, error) {
-	args := m.Called(id)
+func (m *MockStore) Get(ctx context.Context, id string) (*tasks.Task, error) {
+	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*tasks.Task), args.Error(1)
 }
 
-func (m *MockStore) Update(id string, status tasks.TaskStatus, result string) error {
-	args := m.Called(id, status, result)
+func (m *MockStore) Update(ctx context.Context, id string, status tasks.TaskStatus, result string) error {
+	args := m.Called(ctx, id, status, result)
 	return args.Error(0)
-}
-
-func (m *MockStore) GetAll() ([]*tasks.Task, error) {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*tasks.Task), args.Error(1)
 }
 
 func TestNewDefaultStateManager(t *testing.T) {
@@ -62,11 +55,11 @@ func TestStateManager_TransitionToRunning_Success(t *testing.T) {
 	stateManager := NewDefaultStateManager(mockStore, logger)
 
 	task := tasks.NewTask("test", nil)
-	ctx := NewExecutionContext(task)
+	execCtx := NewExecutionContext(task)
 
-	mockStore.On("Update", task.ID, tasks.StatusRunning, "").Return(nil)
+	mockStore.On("Update", context.Background(), task.ID, tasks.StatusRunning, "").Return(nil)
 
-	err := stateManager.TransitionToRunning(ctx)
+	err := stateManager.TransitionToRunning(context.Background(), execCtx)
 
 	assert.NoError(t, err)
 	assert.Equal(t, tasks.StatusRunning, task.Status)
@@ -81,9 +74,9 @@ func TestStateManager_TransitionToRunning_SetStatusError(t *testing.T) {
 
 	task := tasks.NewTask("test", nil)
 	task.Status = tasks.StatusDone // Invalid transition
-	ctx := NewExecutionContext(task)
+	execCtx := NewExecutionContext(task)
 
-	err := stateManager.TransitionToRunning(ctx)
+	err := stateManager.TransitionToRunning(context.Background(), execCtx)
 
 	assert.Error(t, err)
 	// Store should not be called if status transition fails
@@ -97,12 +90,12 @@ func TestStateManager_TransitionToRunning_StoreUpdateError(t *testing.T) {
 	stateManager := NewDefaultStateManager(mockStore, logger)
 
 	task := tasks.NewTask("test", nil)
-	ctx := NewExecutionContext(task)
+	execCtx := NewExecutionContext(task)
 
 	storeErr := errors.New("store update failed")
-	mockStore.On("Update", task.ID, tasks.StatusRunning, "").Return(storeErr)
+	mockStore.On("Update", context.Background(), task.ID, tasks.StatusRunning, "").Return(storeErr)
 
-	err := stateManager.TransitionToRunning(ctx)
+	err := stateManager.TransitionToRunning(context.Background(), execCtx)
 
 	// Should not return error even if store update fails
 	assert.NoError(t, err)
@@ -119,12 +112,12 @@ func TestStateManager_TransitionToFailed_Success(t *testing.T) {
 	task := tasks.NewTask("test", nil)
 	task.Status = tasks.StatusRunning
 	task.Result = "error result"
-	ctx := NewExecutionContext(task)
-	ctx.SetError(errors.New("execution failed"))
+	execCtx := NewExecutionContext(task)
+	execCtx.SetError(errors.New("execution failed"))
 
-	mockStore.On("Update", task.ID, tasks.StatusFailed, "error result").Return(nil)
+	mockStore.On("Update", context.Background(), task.ID, tasks.StatusFailed, "error result").Return(nil)
 
-	err := stateManager.TransitionToFailed(ctx)
+	err := stateManager.TransitionToFailed(context.Background(), execCtx)
 
 	assert.NoError(t, err)
 	assert.Equal(t, tasks.StatusFailed, task.Status)
@@ -140,13 +133,13 @@ func TestStateManager_TransitionToFailed_StoreUpdateError(t *testing.T) {
 	task := tasks.NewTask("test", nil)
 	task.Status = tasks.StatusRunning
 	task.Result = "error result"
-	ctx := NewExecutionContext(task)
-	ctx.SetError(errors.New("execution failed"))
+	execCtx := NewExecutionContext(task)
+	execCtx.SetError(errors.New("execution failed"))
 
 	storeErr := errors.New("store update failed")
-	mockStore.On("Update", task.ID, tasks.StatusFailed, "error result").Return(storeErr)
+	mockStore.On("Update", context.Background(), task.ID, tasks.StatusFailed, "error result").Return(storeErr)
 
-	err := stateManager.TransitionToFailed(ctx)
+	err := stateManager.TransitionToFailed(context.Background(), execCtx)
 
 	// Should not return error even if store update fails
 	assert.NoError(t, err)
@@ -163,11 +156,11 @@ func TestStateManager_TransitionToCompleted_Success(t *testing.T) {
 	task := tasks.NewTask("test", nil)
 	task.Status = tasks.StatusRunning
 	task.Result = "success result"
-	ctx := NewExecutionContext(task)
+	execCtx := NewExecutionContext(task)
 
-	mockStore.On("Update", task.ID, tasks.StatusDone, "success result").Return(nil)
+	mockStore.On("Update", context.Background(), task.ID, tasks.StatusDone, "success result").Return(nil)
 
-	err := stateManager.TransitionToCompleted(ctx)
+	err := stateManager.TransitionToCompleted(context.Background(), execCtx)
 
 	assert.NoError(t, err)
 	assert.Equal(t, tasks.StatusDone, task.Status)
@@ -182,9 +175,9 @@ func TestStateManager_TransitionToCompleted_SetStatusError(t *testing.T) {
 
 	task := tasks.NewTask("test", nil)
 	task.Status = tasks.StatusFailed // Invalid transition
-	ctx := NewExecutionContext(task)
+	execCtx := NewExecutionContext(task)
 
-	err := stateManager.TransitionToCompleted(ctx)
+	err := stateManager.TransitionToCompleted(context.Background(), execCtx)
 
 	assert.Error(t, err)
 	// Store should not be called if status transition fails
@@ -200,12 +193,12 @@ func TestStateManager_TransitionToCompleted_StoreUpdateError(t *testing.T) {
 	task := tasks.NewTask("test", nil)
 	task.Status = tasks.StatusRunning
 	task.Result = "success result"
-	ctx := NewExecutionContext(task)
+	execCtx := NewExecutionContext(task)
 
 	storeErr := errors.New("store update failed")
-	mockStore.On("Update", task.ID, tasks.StatusDone, "success result").Return(storeErr)
+	mockStore.On("Update", context.Background(), task.ID, tasks.StatusDone, "success result").Return(storeErr)
 
-	err := stateManager.TransitionToCompleted(ctx)
+	err := stateManager.TransitionToCompleted(context.Background(), execCtx)
 
 	// Should not return error even if store update fails
 	assert.NoError(t, err)
@@ -220,20 +213,20 @@ func TestStateManager_AllTransitions_Integration(t *testing.T) {
 	stateManager := NewDefaultStateManager(mockStore, logger)
 
 	task := tasks.NewTask("test", nil)
-	ctx := NewExecutionContext(task)
+	execCtx := NewExecutionContext(task)
 
 	// Test full workflow: Pending -> Running -> Done
-	mockStore.On("Update", task.ID, tasks.StatusRunning, "").Return(nil)
-	mockStore.On("Update", task.ID, tasks.StatusDone, mock.AnythingOfType("string")).Return(nil)
+	mockStore.On("Update", context.Background(), task.ID, tasks.StatusRunning, "").Return(nil)
+	mockStore.On("Update", context.Background(), task.ID, tasks.StatusDone, mock.AnythingOfType("string")).Return(nil)
 
 	// Transition to running
-	err := stateManager.TransitionToRunning(ctx)
+	err := stateManager.TransitionToRunning(context.Background(), execCtx)
 	assert.NoError(t, err)
 	assert.Equal(t, tasks.StatusRunning, task.Status)
 
 	// Transition to completed
 	task.Result = "success"
-	err = stateManager.TransitionToCompleted(ctx)
+	err = stateManager.TransitionToCompleted(context.Background(), execCtx)
 	assert.NoError(t, err)
 	assert.Equal(t, tasks.StatusDone, task.Status)
 

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"task-orchestrator/errors"
 	"task-orchestrator/logger"
@@ -22,7 +23,7 @@ func NewPrintHandler(lg *logger.Logger) *PrintHandler {
 	return &PrintHandler{logger: lg}
 }
 
-func (h *PrintHandler) Run(task *tasks.Task) error {
+func (h *PrintHandler) Run(_ context.Context, task *tasks.Task) error {
 	var p printPayload
 	if err := json.Unmarshal(task.Payload, &p); err != nil {
 		return errors.NewValidationError("invalid print payload", map[string]any{

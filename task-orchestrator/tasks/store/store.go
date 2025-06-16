@@ -1,10 +1,13 @@
 package store
 
-import "task-orchestrator/tasks"
+import (
+	"context"
+	"task-orchestrator/tasks"
+)
 
 // TaskStore defines the contract for task persistance
 type TaskStore interface {
-	Save(task *tasks.Task) error
-	Get(id string) (*tasks.Task, error)
-	Update(id string, status tasks.TaskStatus, result string) error
+	Save(ctx context.Context, task *tasks.Task) error
+	Get(ctx context.Context, id string) (*tasks.Task, error)
+	Update(ctx context.Context, id string, status tasks.TaskStatus, result string) error
 }

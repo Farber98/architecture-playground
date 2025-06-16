@@ -2,6 +2,7 @@ package orchestrator_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"task-orchestrator/logger"
@@ -21,7 +22,7 @@ type fakeRunner struct {
 	errorMsg   string
 }
 
-func (r *fakeRunner) Run(task *tasks.Task) error {
+func (r *fakeRunner) Run(ctx context.Context, task *tasks.Task) error {
 	if r.shouldFail {
 		// Just set error result and return error - let orchestrator handle status
 		task.Result = r.errorMsg
@@ -41,25 +42,25 @@ type fakeStore struct {
 	shouldFailUpdate bool
 }
 
-func (s *fakeStore) Save(task *tasks.Task) error {
+func (s *fakeStore) Save(ctx context.Context, task *tasks.Task) error {
 	if s.shouldFailSave {
 		return errors.New("store save failed")
 	}
-	return s.TaskStore.Save(task)
+	return s.TaskStore.Save(ctx, task)
 }
 
-func (s *fakeStore) Get(id string) (*tasks.Task, error) {
+func (s *fakeStore) Get(ctx context.Context, id string) (*tasks.Task, error) {
 	if s.shouldFailGet {
 		return nil, errors.New("store get failed")
 	}
-	return s.TaskStore.Get(id)
+	return s.TaskStore.Get(ctx, id)
 }
 
-func (s *fakeStore) Update(id string, status tasks.TaskStatus, result string) error {
+func (s *fakeStore) Update(ctx context.Context, id string, status tasks.TaskStatus, result string) error {
 	if s.shouldFailUpdate {
 		return errors.New("store update failed")
 	}
-	return s.TaskStore.Update(id, status, result)
+	return s.TaskStore.Update(ctx, id, status, result)
 }
 
 func TestOrchestrator_SubmitTask(t *testing.T) {
@@ -177,7 +178,7 @@ func TestOrchestrator_SubmitTask(t *testing.T) {
 			taskStore := tc.storeSetup()
 			orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
-			task, err := orch.SubmitTask(tc.taskType, tc.payload)
+			task, err := orch.SubmitTask(context.Background(), tc.taskType, tc.payload)
 
 			if tc.expectErr {
 				require.Error(t, err)
@@ -196,7 +197,7 @@ func TestOrchestrator_SubmitTask(t *testing.T) {
 				assert.Equal(t, tc.expectedResult, task.Result)
 
 				// Verify task was persisted correctly
-				savedTask, getErr := taskStore.Get(task.ID)
+				savedTask, getErr := taskStore.Get(context.Background(), task.ID)
 				require.NoError(t, getErr)
 				assert.Equal(t, task.ID, savedTask.ID)
 				assert.Equal(t, tc.expectedStatus, savedTask.Status)
@@ -226,7 +227,7 @@ func TestOrchestrator_GetTask(t *testing.T) {
 				require.NoError(t, task.SetStatus(tasks.StatusRunning))
 				require.NoError(t, task.SetStatus(tasks.StatusDone))
 				task.Result = "done"
-				require.NoError(t, taskStore.Save(task))
+				require.NoError(t, taskStore.Save(context.Background(), task))
 				return task.ID
 			},
 			storeSetup: func() store.TaskStore {
@@ -294,7 +295,7 @@ func TestOrchestrator_GetTask(t *testing.T) {
 
 			orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
-			task, err := orch.GetTask(taskID)
+			task, err := orch.GetTask(context.Background(), taskID)
 
 			if tc.expectErr {
 				require.Error(t, err)
@@ -325,7 +326,7 @@ func TestOrchestrator_LoggingIntegration(t *testing.T) {
 	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit a task
-	task, err := orch.SubmitTask("print", json.RawMessage(`{"message":"test logging"}`))
+	task, err := orch.SubmitTask(context.Background(), "print", json.RawMessage(`{"message":"test logging"}`))
 	require.NoError(t, err)
 	require.NotNil(t, task)
 
@@ -364,7 +365,7 @@ func TestOrchestrator_StoreUpdateFailureDoesNotFailExecution(t *testing.T) {
 	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit task - should succeed even though store update fails
-	task, err := orch.SubmitTask("print", json.RawMessage(`{"message":"test"}`))
+	task, err := orch.SubmitTask(context.Background(), "print", json.RawMessage(`{"message":"test"}`))
 	require.NoError(t, err) // Should not fail even though store update failed
 	require.NotNil(t, task)
 
@@ -395,10 +396,10 @@ func TestOrchestrator_TaskIDGeneration(t *testing.T) {
 	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit multiple tasks
-	task1, err1 := orch.SubmitTask("print", json.RawMessage(`{"message":"task1"}`))
+	task1, err1 := orch.SubmitTask(context.Background(), "print", json.RawMessage(`{"message":"task1"}`))
 	require.NoError(t, err1)
 
-	task2, err2 := orch.SubmitTask("print", json.RawMessage(`{"message":"task2"}`))
+	task2, err2 := orch.SubmitTask(context.Background(), "print", json.RawMessage(`{"message":"task2"}`))
 	require.NoError(t, err2)
 
 	// Verify unique IDs were generated
@@ -407,11 +408,11 @@ func TestOrchestrator_TaskIDGeneration(t *testing.T) {
 	assert.NotEqual(t, task1.ID, task2.ID)
 
 	// Verify both tasks can be retrieved
-	retrieved1, err := orch.GetTask(task1.ID)
+	retrieved1, err := orch.GetTask(context.Background(), task1.ID)
 	require.NoError(t, err)
 	assert.Equal(t, task1.ID, retrieved1.ID)
 
-	retrieved2, err := orch.GetTask(task2.ID)
+	retrieved2, err := orch.GetTask(context.Background(), task2.ID)
 	require.NoError(t, err)
 	assert.Equal(t, task2.ID, retrieved2.ID)
 }
@@ -428,7 +429,7 @@ func TestOrchestrator_RunnerFailureUpdatesStore(t *testing.T) {
 	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit task that will fail
-	_, err := orch.SubmitTask("print", json.RawMessage(`{"message":"fail me"}`))
+	_, err := orch.SubmitTask(context.Background(), "print", json.RawMessage(`{"message":"fail me"}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "runner failed")
 
@@ -461,7 +462,7 @@ func TestOrchestrator_GetTaskStatus(t *testing.T) {
 				require.NoError(t, task.SetStatus(tasks.StatusRunning))
 				require.NoError(t, task.SetStatus(tasks.StatusDone))
 				task.Result = "task done"
-				require.NoError(t, taskStore.Save(task))
+				require.NoError(t, taskStore.Save(context.Background(), task))
 				return task.ID
 			},
 			storeSetup: func() store.TaskStore {
@@ -476,7 +477,7 @@ func TestOrchestrator_GetTaskStatus(t *testing.T) {
 				task := tasks.NewTask("sleep", json.RawMessage(`{}`))
 				require.NoError(t, task.SetStatus(tasks.StatusRunning))
 				task.Result = ""
-				require.NoError(t, taskStore.Save(task))
+				require.NoError(t, taskStore.Save(context.Background(), task))
 				return task.ID
 			},
 			storeSetup: func() store.TaskStore {
@@ -492,7 +493,7 @@ func TestOrchestrator_GetTaskStatus(t *testing.T) {
 				require.NoError(t, task.SetStatus(tasks.StatusRunning))
 				require.NoError(t, task.SetStatus(tasks.StatusFailed))
 				task.Result = "execution error"
-				require.NoError(t, taskStore.Save(task))
+				require.NoError(t, taskStore.Save(context.Background(), task))
 				return task.ID
 			},
 			storeSetup: func() store.TaskStore {
@@ -506,7 +507,7 @@ func TestOrchestrator_GetTaskStatus(t *testing.T) {
 			setupTask: func(taskStore store.TaskStore) string {
 				task := tasks.NewTask("print", json.RawMessage(`{}`))
 				// Status is already StatusSubmitted from NewTask
-				require.NoError(t, taskStore.Save(task))
+				require.NoError(t, taskStore.Save(context.Background(), task))
 				return task.ID
 			},
 			storeSetup: func() store.TaskStore {
@@ -556,7 +557,7 @@ func TestOrchestrator_GetTaskStatus(t *testing.T) {
 
 			orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
-			status, err := orch.GetTaskStatus(taskID)
+			status, err := orch.GetTaskStatus(context.Background(), taskID)
 
 			if tc.expectErr {
 				require.Error(t, err)
@@ -615,7 +616,7 @@ func TestOrchestrator_ResultHandling_Comprehensive(t *testing.T) {
 			taskStore := store.NewMemoryTaskStore()
 			orch := orchestrator.NewDefaultOrchestrator(taskStore, tc.runnerSetup(), testLogger)
 
-			task, err := orch.SubmitTask("test", json.RawMessage(`{"test":"data"}`))
+			task, err := orch.SubmitTask(context.Background(), "test", json.RawMessage(`{"test":"data"}`))
 
 			if tc.expectErr {
 				require.Error(t, err)
@@ -627,7 +628,7 @@ func TestOrchestrator_ResultHandling_Comprehensive(t *testing.T) {
 			assert.Equal(t, tc.expectedResult, task.Result)
 
 			// Verify persistence
-			savedTask, getErr := taskStore.Get(task.ID)
+			savedTask, getErr := taskStore.Get(context.Background(), task.ID)
 			require.NoError(t, getErr)
 			assert.Equal(t, tc.expectedResult, savedTask.Result)
 		})
@@ -640,7 +641,7 @@ type fakeRunnerNoResult struct {
 	errorMsg   string
 }
 
-func (r *fakeRunnerNoResult) Run(task *tasks.Task) error {
+func (r *fakeRunnerNoResult) Run(ctx context.Context, task *tasks.Task) error {
 	if r.shouldFail {
 		// Don't set task.Result - let orchestrator handle it
 		return errors.New(r.errorMsg)

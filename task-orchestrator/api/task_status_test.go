@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -31,7 +32,7 @@ func TestTaskStatusHandler_Success(t *testing.T) {
 	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// First, submit a task to have something to query
-	task, err := orch.SubmitTask("print", []byte(`{"message":"test task"}`))
+	task, err := orch.SubmitTask(context.Background(), "print", []byte(`{"message":"test task"}`))
 	require.NoError(t, err)
 
 	handler := NewTaskStatusHandler(orch, testLogger)
@@ -202,7 +203,7 @@ func TestTaskStatusHandler_DifferentTaskStatuses(t *testing.T) {
 			task.ID = tc.taskID         // Override the auto-generated ID for this test
 			task.Status = tc.taskStatus // Now using TaskStatus type
 			task.Result = tc.taskResult
-			require.NoError(t, taskStore.Save(task))
+			require.NoError(t, taskStore.Save(context.Background(), task))
 
 			req := httptest.NewRequest(http.MethodGet, "/tasks/"+task.ID+"/status", nil)
 			rr := httptest.NewRecorder()
@@ -233,7 +234,7 @@ func TestTaskStatusHandler_ResponseEncodingFailure(t *testing.T) {
 	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit a task to have something to query
-	task, err := orch.SubmitTask("print", []byte(`{"message":"test"}`))
+	task, err := orch.SubmitTask(context.Background(), "print", []byte(`{"message":"test"}`))
 	require.NoError(t, err)
 
 	handler := NewTaskStatusHandler(orch, testLogger)
@@ -259,7 +260,7 @@ func TestTaskStatusHandler_LoggingIntegration(t *testing.T) {
 	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit a task
-	task, err := orch.SubmitTask("print", []byte(`{"message":"test logging"}`))
+	task, err := orch.SubmitTask(context.Background(), "print", []byte(`{"message":"test logging"}`))
 	require.NoError(t, err)
 
 	handler := NewTaskStatusHandler(orch, testLogger)
@@ -292,7 +293,7 @@ func TestTaskStatusHandler_URLPathParsing(t *testing.T) {
 	task.ID = "test-task-with-special-chars"
 	task.Status = tasks.StatusDone
 	task.Result = "completed"
-	require.NoError(t, taskStore.Save(task))
+	require.NoError(t, taskStore.Save(context.Background(), task))
 
 	testCases := []struct {
 		name           string
@@ -354,7 +355,7 @@ func TestTaskStatusHandler_ContentType(t *testing.T) {
 	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit a task
-	task, err := orch.SubmitTask("print", []byte(`{"message":"test"}`))
+	task, err := orch.SubmitTask(context.Background(), "print", []byte(`{"message":"test"}`))
 	require.NoError(t, err)
 
 	handler := NewTaskStatusHandler(orch, testLogger)
@@ -377,15 +378,15 @@ type mockOrchestrator struct {
 	getTaskStatusErr    error
 }
 
-func (m *mockOrchestrator) SubmitTask(taskType string, payload json.RawMessage) (*tasks.Task, error) {
+func (m *mockOrchestrator) SubmitTask(ctx context.Context, taskType string, payload json.RawMessage) (*tasks.Task, error) {
 	return m.submitTaskResult, m.submitTaskErr
 }
 
-func (m *mockOrchestrator) GetTask(taskID string) (*tasks.Task, error) {
+func (m *mockOrchestrator) GetTask(ctx context.Context, taskID string) (*tasks.Task, error) {
 	return m.getTaskResult, m.getTaskErr
 }
 
-func (m *mockOrchestrator) GetTaskStatus(taskID string) (string, error) {
+func (m *mockOrchestrator) GetTaskStatus(ctx context.Context, taskID string) (string, error) {
 	return m.getTaskStatusResult, m.getTaskStatusErr
 }
 

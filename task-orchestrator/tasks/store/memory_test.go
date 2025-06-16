@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"context"
 	"encoding/json"
 	"task-orchestrator/tasks"
 	"task-orchestrator/tasks/store"
@@ -41,7 +42,7 @@ func TestMemoryTaskStore_Save(t *testing.T) {
 			taskToSave: task1,
 			expectErr:  false,
 			postCheck: func(t *testing.T, s *store.MemoryTaskStore, taskID string) {
-				got, err := s.Get(taskID)
+				got, err := s.Get(context.Background(), taskID)
 				require.NoError(t, err)
 				assert.Equal(t, task1.ID, got.ID)
 				assert.Equal(t, task1.Status, got.Status)
@@ -51,7 +52,7 @@ func TestMemoryTaskStore_Save(t *testing.T) {
 			name: "save duplicate",
 			storeSetup: func() *store.MemoryTaskStore {
 				s := store.NewMemoryTaskStore()
-				err := s.Save(taskExisting)
+				err := s.Save(context.Background(), taskExisting)
 				require.NoError(t, err, "Setup: failed to save initial task")
 				return s
 			},
@@ -64,7 +65,7 @@ func TestMemoryTaskStore_Save(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := tc.storeSetup()
-			err := s.Save(tc.taskToSave)
+			err := s.Save(context.Background(), tc.taskToSave)
 
 			if tc.expectErr {
 				require.Error(t, err)
@@ -99,7 +100,7 @@ func TestMemoryTaskStore_Get(t *testing.T) {
 			name: "successful get",
 			storeSetup: func() *store.MemoryTaskStore {
 				s := store.NewMemoryTaskStore()
-				require.NoError(t, s.Save(task1))
+				require.NoError(t, s.Save(context.Background(), task1))
 				return s
 			},
 			idToGet:    "task-get-1",
@@ -119,7 +120,7 @@ func TestMemoryTaskStore_Get(t *testing.T) {
 			name: "get returns a copy",
 			storeSetup: func() *store.MemoryTaskStore {
 				s := store.NewMemoryTaskStore()
-				require.NoError(t, s.Save(taskForCopyTest))
+				require.NoError(t, s.Save(context.Background(), taskForCopyTest))
 				return s
 			},
 			idToGet:     "task-get-copy",
@@ -132,7 +133,7 @@ func TestMemoryTaskStore_Get(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := tc.storeSetup()
-			got, err := s.Get(tc.idToGet)
+			got, err := s.Get(context.Background(), tc.idToGet)
 
 			if tc.expectErr {
 				require.Error(t, err)
@@ -153,7 +154,7 @@ func TestMemoryTaskStore_Get(t *testing.T) {
 					got.Result = "modified copy"
 
 					// Get the task again from the store
-					original, errGetAgain := s.Get(tc.idToGet)
+					original, errGetAgain := s.Get(context.Background(), tc.idToGet)
 					require.NoError(t, errGetAgain, "Failed to get task again for copy check")
 					require.NotNil(t, original)
 
@@ -187,7 +188,7 @@ func TestMemoryTaskStore_Update(t *testing.T) {
 				s := store.NewMemoryTaskStore()
 				// Save a copy to avoid modifying taskToUpdate directly in setup
 				taskCopy := *taskToUpdate
-				require.NoError(t, s.Save(&taskCopy))
+				require.NoError(t, s.Save(context.Background(), &taskCopy))
 				return s
 			},
 			idToUpdate: "task-update-1",
@@ -207,8 +208,8 @@ func TestMemoryTaskStore_Update(t *testing.T) {
 				s := store.NewMemoryTaskStore()
 				// Create task and advance it to running state
 				task := newTestTask("task-update-1")
-				require.NoError(t, s.Save(task))
-				require.NoError(t, s.Update("task-update-1", tasks.StatusRunning, "now running"))
+				require.NoError(t, s.Save(context.Background(), task))
+				require.NoError(t, s.Update(context.Background(), "task-update-1", tasks.StatusRunning, "now running"))
 				return s
 			},
 			idToUpdate: "task-update-1",
@@ -238,7 +239,7 @@ func TestMemoryTaskStore_Update(t *testing.T) {
 			storeSetup: func() *store.MemoryTaskStore {
 				s := store.NewMemoryTaskStore()
 				taskCopy := *taskToUpdate
-				require.NoError(t, s.Save(&taskCopy))
+				require.NoError(t, s.Save(context.Background(), &taskCopy))
 				return s
 			},
 			idToUpdate: "task-update-1",
@@ -257,7 +258,7 @@ func TestMemoryTaskStore_Update(t *testing.T) {
 			storeSetup: func() *store.MemoryTaskStore {
 				s := store.NewMemoryTaskStore()
 				taskCopy := *taskToUpdate
-				require.NoError(t, s.Save(&taskCopy))
+				require.NoError(t, s.Save(context.Background(), &taskCopy))
 				return s
 			},
 			idToUpdate: "task-update-1",
@@ -278,7 +279,7 @@ func TestMemoryTaskStore_Update(t *testing.T) {
 				task := newTestTask("task-update-1")
 				// Set to done first
 				task.Status = tasks.StatusDone
-				require.NoError(t, s.Save(task))
+				require.NoError(t, s.Save(context.Background(), task))
 				return s
 			},
 			idToUpdate: "task-update-1",
@@ -297,7 +298,7 @@ func TestMemoryTaskStore_Update(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := tc.storeSetup()
-			err := s.Update(tc.idToUpdate, tc.newStatus, tc.newResult)
+			err := s.Update(context.Background(), tc.idToUpdate, tc.newStatus, tc.newResult)
 
 			if tc.expectErr {
 				require.Error(t, err)
@@ -307,7 +308,7 @@ func TestMemoryTaskStore_Update(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				// Verify the task was updated correctly
-				updatedTask, getErr := s.Get(tc.idToUpdate)
+				updatedTask, getErr := s.Get(context.Background(), tc.idToUpdate)
 				require.NoError(t, getErr, "Failed to get task after update")
 				require.NotNil(t, updatedTask)
 				assert.Equal(t, tc.expectedTask.ID, updatedTask.ID)

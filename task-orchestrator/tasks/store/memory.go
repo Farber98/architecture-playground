@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"task-orchestrator/tasks"
@@ -24,7 +25,7 @@ func NewMemoryTaskStore() *MemoryTaskStore {
 
 // Save adds a new task to the store.
 // It ensures task ID uniqueness to prevent accidental overwrites or state corruption.
-func (s *MemoryTaskStore) Save(task *tasks.Task) error {
+func (s *MemoryTaskStore) Save(ctx context.Context, task *tasks.Task) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -39,7 +40,7 @@ func (s *MemoryTaskStore) Save(task *tasks.Task) error {
 // Get retrieves a task by its ID.
 // It returns a copy of the task to prevent external callers from unintentionally
 // modifying the state of the task stored within the map.
-func (s *MemoryTaskStore) Get(id string) (*tasks.Task, error) {
+func (s *MemoryTaskStore) Get(_ context.Context, id string) (*tasks.Task, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -54,7 +55,7 @@ func (s *MemoryTaskStore) Get(id string) (*tasks.Task, error) {
 
 // Update modifies the status and result of an existing task.
 // This method allows for changing mutable fields of a task after it has been saved,
-func (s *MemoryTaskStore) Update(id string, status tasks.TaskStatus, result string) error {
+func (s *MemoryTaskStore) Update(_ context.Context, id string, status tasks.TaskStatus, result string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

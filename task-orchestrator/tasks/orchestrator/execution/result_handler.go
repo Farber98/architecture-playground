@@ -9,8 +9,8 @@ import (
 // This abstraction enables custom result processing for specific task types
 // without coupling execution logic to result formatting details.
 type ResultHandler interface {
-	HandleSuccess(ctx *ExecutionContext)
-	HandleFailure(ctx *ExecutionContext)
+	HandleSuccess(execCtx *ExecutionContext)
+	HandleFailure(execCtx *ExecutionContext)
 }
 
 // DefaultResultHandler provides result formatting with minimal assumptions.
@@ -24,23 +24,23 @@ func NewDefaultResultHandler() *DefaultResultHandler {
 
 // HandleSuccess finalizes successful execution without overriding business logic results.
 // Task handlers are responsible for setting meaningful results during execution.
-func (h *DefaultResultHandler) HandleSuccess(ctx *ExecutionContext) {
-	ctx.SetSuccess()
+func (h *DefaultResultHandler) HandleSuccess(execCtx *ExecutionContext) {
+	execCtx.SetSuccess()
 	// Task result should already be set by handler
 	// Nothing additional needed for success case
 }
 
 // HandleFailure provides informative error messages while respecting existing results.
 // Only sets fallback messages when handlers haven't provided specific error details.
-func (h *DefaultResultHandler) HandleFailure(ctx *ExecutionContext) {
+func (h *DefaultResultHandler) HandleFailure(execCtx *ExecutionContext) {
 	// Only set result if handler didn't set one
 	// Format domain-specific errors with structured information for debugging
-	if ctx.Task.Result == "" {
-		if taskErr, ok := errors.IsTaskError(ctx.Error); ok {
-			ctx.Task.Result = fmt.Sprintf("task %s: %s", taskErr.Type, taskErr.Message)
+	if execCtx.Task.Result == "" {
+		if taskErr, ok := errors.IsTaskError(execCtx.Error); ok {
+			execCtx.Task.Result = fmt.Sprintf("task %s: %s", taskErr.Type, taskErr.Message)
 		} else {
 			// Provide generic fallback for unexpected errors
-			ctx.Task.Result = fmt.Sprintf("execution failed: %s", ctx.Error.Error())
+			execCtx.Task.Result = fmt.Sprintf("execution failed: %s", execCtx.Error.Error())
 		}
 	}
 }

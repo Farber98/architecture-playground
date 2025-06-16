@@ -1,6 +1,7 @@
 package runners
 
 import (
+	"context"
 	"task-orchestrator/errors"
 	"task-orchestrator/tasks"
 	handlerRegistry "task-orchestrator/tasks/registry"
@@ -21,13 +22,13 @@ func NewSynchronousRunner(r *handlerRegistry.HandlerRegistry) *SynchronousRunner
 	return &SynchronousRunner{registry: r}
 }
 
-func (r *SynchronousRunner) Run(task *tasks.Task) error {
+func (r *SynchronousRunner) Run(ctx context.Context, task *tasks.Task) error {
 	handler, ok := r.registry.Get(task.Type)
 	if !ok {
 		return errors.NewNotFoundError("no handler registered for task type: " + task.Type)
 	}
 
-	if err := handler.Run(task); err != nil {
+	if err := handler.Run(ctx, task); err != nil {
 		// Preserve structured errors, wrap others as execution errors
 		if _, ok := errors.IsTaskError(err); ok {
 			return err

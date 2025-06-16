@@ -42,7 +42,7 @@ func NewTaskStatusHandler(orch orchestrator.Orchestrator, lg *logger.Logger) htt
 			"task_id":     taskID,
 		})
 
-		status, err := orch.GetTaskStatus(taskID)
+		status, err := orch.GetTaskStatus(r.Context(), taskID)
 		if err != nil {
 			if taskErr, ok := errors.IsTaskError(err); ok {
 				respondWithError(w, taskErr, lg)
