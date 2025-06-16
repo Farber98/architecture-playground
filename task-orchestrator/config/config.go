@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -17,14 +18,20 @@ type Config struct {
 }
 
 // LoadConfig loads configuration from environment variables with sensible defaults
-func LoadConfig() *Config {
-	return &Config{
+func LoadConfig() (*Config, error) {
+	cfg := &Config{
 		ServerPort:      getEnvInt("PORT", 8080),
 		LogLevel:        getEnvString("LOG_LEVEL", "INFO"),
 		TaskTimeout:     getEnvDuration("TASK_TIMEOUT", 30*time.Second),
 		ShutdownTimeout: getEnvDuration("SHUTDOWN_TIMEOUT", 15*time.Second),
 		Version:         getEnvString("VERSION", "1.0.0"),
 	}
+
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
 }
 
 // Address returns the server address in host:port format
@@ -56,4 +63,46 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 		}
 	}
 	return defaultValue
+}
+
+// validate performs basic validation of the configuration
+func (c *Config) validate() error {
+	// Validate ServerPort
+	if c.ServerPort < 1 || c.ServerPort > 65535 {
+		return fmt.Errorf("invalid server port %d: must be between 1 and 65535", c.ServerPort)
+	}
+
+	// Validate and normalize LogLevel
+	validLevels := map[string]bool{
+		"DEBUG": true, "INFO": true, "WARN": true, "ERROR": true, "FATAL": true,
+	}
+	upperLevel := strings.ToUpper(strings.TrimSpace(c.LogLevel))
+	if !validLevels[upperLevel] {
+		return fmt.Errorf("invalid log level '%s': must be DEBUG, INFO, WARN, ERROR, or FATAL", c.LogLevel)
+	}
+	c.LogLevel = upperLevel
+
+	// Validate TaskTimeout
+	if c.TaskTimeout <= 0 {
+		return fmt.Errorf("invalid task timeout %v: must be positive", c.TaskTimeout)
+	}
+	if c.TaskTimeout > 24*time.Hour {
+		return fmt.Errorf("invalid task timeout %v: must not exceed 24 hours", c.TaskTimeout)
+	}
+
+	// Validate ShutdownTimeout
+	if c.ShutdownTimeout <= 0 {
+		return fmt.Errorf("invalid shutdown timeout %v: must be positive", c.ShutdownTimeout)
+	}
+	if c.ShutdownTimeout > 5*time.Minute {
+		return fmt.Errorf("invalid shutdown timeout %v: must not exceed 5 minutes", c.ShutdownTimeout)
+	}
+
+	// Validate Version
+	if strings.TrimSpace(c.Version) == "" {
+		return fmt.Errorf("version cannot be empty")
+	}
+	c.Version = strings.TrimSpace(c.Version)
+
+	return nil
 }

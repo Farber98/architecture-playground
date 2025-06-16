@@ -14,7 +14,10 @@ import (
 
 func main() {
 	// Load configuration
-	cfg := config.LoadConfig()
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("invalid config: %v", err)
+	}
 
 	// Create logger
 	lg := logger.New(cfg.LogLevel, nil)
