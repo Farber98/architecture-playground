@@ -175,7 +175,7 @@ func TestOrchestrator_SubmitTask(t *testing.T) {
 
 			runner := tc.runnerSetup()
 			taskStore := tc.storeSetup()
-			orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+			orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 			task, err := orch.SubmitTask(tc.taskType, tc.payload)
 
@@ -292,7 +292,7 @@ func TestOrchestrator_GetTask(t *testing.T) {
 				taskID = tc.taskID
 			}
 
-			orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+			orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 			task, err := orch.GetTask(taskID)
 
@@ -322,7 +322,7 @@ func TestOrchestrator_LoggingIntegration(t *testing.T) {
 
 	runner := &fakeRunner{shouldFail: false}
 	taskStore := store.NewMemoryTaskStore()
-	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit a task
 	task, err := orch.SubmitTask("print", json.RawMessage(`{"message":"test logging"}`))
@@ -335,10 +335,9 @@ func TestOrchestrator_LoggingIntegration(t *testing.T) {
 	// Check all expected log messages from successful execution
 	assert.Contains(t, logOutput, "task submitted")
 	assert.Contains(t, logOutput, "task completed")
-	assert.Contains(t, logOutput, task.ID)                         // Task ID should appear in logs
-	assert.Contains(t, logOutput, "print")                         // Task type should appear
-	assert.Contains(t, logOutput, "*orchestrator_test.fakeRunner") // Runner type
-	assert.Contains(t, logOutput, "done")                          // Final status
+	assert.Contains(t, logOutput, task.ID) // Task ID should appear in logs
+	assert.Contains(t, logOutput, "print") // Task type should appear
+	assert.Contains(t, logOutput, "done")  // Final status
 
 	// Verify specific log structure
 	assert.Contains(t, logOutput, "payload_size")
@@ -362,7 +361,7 @@ func TestOrchestrator_StoreUpdateFailureDoesNotFailExecution(t *testing.T) {
 		TaskStore:        store.NewMemoryTaskStore(),
 		shouldFailUpdate: true,
 	}
-	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit task - should succeed even though store update fails
 	task, err := orch.SubmitTask("print", json.RawMessage(`{"message":"test"}`))
@@ -393,7 +392,7 @@ func TestOrchestrator_TaskIDGeneration(t *testing.T) {
 
 	runner := &fakeRunner{shouldFail: false}
 	taskStore := store.NewMemoryTaskStore()
-	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit multiple tasks
 	task1, err1 := orch.SubmitTask("print", json.RawMessage(`{"message":"task1"}`))
@@ -426,7 +425,7 @@ func TestOrchestrator_RunnerFailureUpdatesStore(t *testing.T) {
 
 	runner := &fakeRunner{shouldFail: true, errorMsg: "runner failed"}
 	taskStore := store.NewMemoryTaskStore()
-	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit task that will fail
 	_, err := orch.SubmitTask("print", json.RawMessage(`{"message":"fail me"}`))
@@ -555,7 +554,7 @@ func TestOrchestrator_GetTaskStatus(t *testing.T) {
 				taskID = tc.taskID
 			}
 
-			orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+			orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 			status, err := orch.GetTaskStatus(taskID)
 
@@ -614,7 +613,7 @@ func TestOrchestrator_ResultHandling_Comprehensive(t *testing.T) {
 			testLogger := logger.New("DEBUG", &buf)
 
 			taskStore := store.NewMemoryTaskStore()
-			orch := orchestrator.NewOrchestrator(taskStore, tc.runnerSetup(), testLogger)
+			orch := orchestrator.NewDefaultOrchestrator(taskStore, tc.runnerSetup(), testLogger)
 
 			task, err := orch.SubmitTask("test", json.RawMessage(`{"test":"data"}`))
 

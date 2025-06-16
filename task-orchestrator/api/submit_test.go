@@ -30,7 +30,7 @@ func TestSubmitHandler_Print_Success(t *testing.T) {
 	reg.Register("print", handlers.NewPrintHandler(testLogger))
 	runner := runners.NewSynchronousRunner(reg)
 	store := store.NewMemoryTaskStore()
-	orchestrator := orchestrator.NewOrchestrator(store, runner, testLogger)
+	orchestrator := orchestrator.NewDefaultOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orchestrator, testLogger)
 
 	body := []byte(`{"type":"print","payload":{"message":"Hello from HTTP"}}`)
@@ -58,7 +58,7 @@ func TestSubmitHandler_InvalidJSON(t *testing.T) {
 
 	store := store.NewMemoryTaskStore()
 	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
-	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
 	body := []byte(`{"type":"print","payload":{`) // malformed
@@ -85,7 +85,7 @@ func TestSubmitHandler_UnknownTaskType(t *testing.T) {
 
 	store := store.NewMemoryTaskStore()
 	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
-	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
 	body := []byte(`{"type":"unknown","payload":{}}`)
@@ -113,7 +113,7 @@ func TestSubmitHandler_MissingTaskType(t *testing.T) {
 
 	store := store.NewMemoryTaskStore()
 	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
-	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
 	body := []byte(`{"payload":{"message":"hello"}}`) // missing type field
@@ -164,7 +164,7 @@ func TestSubmitHandler_TaskHandlerValidationError(t *testing.T) {
 	reg.Register("sleep", handlers.NewSleepHandler(testLogger))
 	store := store.NewMemoryTaskStore()
 	runner := runners.NewSynchronousRunner(reg)
-	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
 	// Send invalid sleep payload (negative seconds)
@@ -197,7 +197,7 @@ func TestSubmitHandler_PayloadTooLarge(t *testing.T) {
 
 	store := store.NewMemoryTaskStore()
 	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
-	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
 	// Create a payload larger than 100KB (100 * 1024 bytes)
@@ -238,7 +238,7 @@ func TestSubmitHandler_TaskTypeTooLong(t *testing.T) {
 
 	store := store.NewMemoryTaskStore()
 	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
-	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
 	// Create a task type longer than 50 characters
@@ -277,7 +277,7 @@ func TestSubmitHandler_RequestBodyTooLarge(t *testing.T) {
 
 	store := store.NewMemoryTaskStore()
 	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
-	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
 	// Create a request body larger than 1MB
@@ -326,7 +326,7 @@ func TestSubmitHandler_ResponseEncodingFailure(t *testing.T) {
 
 	store := store.NewMemoryTaskStore()
 	runner := runners.NewSynchronousRunner(reg)
-	orch := orchestrator.NewOrchestrator(store, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(store, runner, testLogger)
 	handler := NewSubmitHandler(orch, testLogger)
 
 	body := []byte(`{"type":"print","payload":{"message":"simulate write failure"}}`)

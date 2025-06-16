@@ -30,7 +30,7 @@ func main() {
 	registry := createHandlerRegistry(lg)
 	taskStore := store.NewMemoryTaskStore()
 	runner := runners.NewSynchronousRunner(registry)
-	orch := orchestrator.NewOrchestrator(taskStore, runner, lg)
+	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, lg)
 
 	//	Create and start server
 	srv := server.New(orch, registry, cfg, lg)

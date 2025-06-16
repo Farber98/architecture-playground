@@ -28,7 +28,7 @@ func TestTaskStatusHandler_Success(t *testing.T) {
 	reg.Register("print", handlers.NewPrintHandler(testLogger))
 	runner := runners.NewSynchronousRunner(reg)
 	taskStore := store.NewMemoryTaskStore()
-	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// First, submit a task to have something to query
 	task, err := orch.SubmitTask("print", []byte(`{"message":"test task"}`))
@@ -58,7 +58,7 @@ func TestTaskStatusHandler_NonExistentTask(t *testing.T) {
 
 	taskStore := store.NewMemoryTaskStore()
 	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
-	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 	handler := NewTaskStatusHandler(orch, testLogger)
 
 	req := httptest.NewRequest(http.MethodGet, "/tasks/non-existent-id/status", nil)
@@ -156,7 +156,7 @@ func TestTaskStatusHandler_DifferentTaskStatuses(t *testing.T) {
 
 	taskStore := store.NewMemoryTaskStore()
 	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
-	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 	handler := NewTaskStatusHandler(orch, testLogger)
 
 	testCases := []struct {
@@ -230,7 +230,7 @@ func TestTaskStatusHandler_ResponseEncodingFailure(t *testing.T) {
 	reg.Register("print", handlers.NewPrintHandler(testLogger))
 	runner := runners.NewSynchronousRunner(reg)
 	taskStore := store.NewMemoryTaskStore()
-	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit a task to have something to query
 	task, err := orch.SubmitTask("print", []byte(`{"message":"test"}`))
@@ -256,7 +256,7 @@ func TestTaskStatusHandler_LoggingIntegration(t *testing.T) {
 	reg.Register("print", handlers.NewPrintHandler(testLogger))
 	runner := runners.NewSynchronousRunner(reg)
 	taskStore := store.NewMemoryTaskStore()
-	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit a task
 	task, err := orch.SubmitTask("print", []byte(`{"message":"test logging"}`))
@@ -285,7 +285,7 @@ func TestTaskStatusHandler_URLPathParsing(t *testing.T) {
 
 	taskStore := store.NewMemoryTaskStore()
 	runner := runners.NewSynchronousRunner(handlerRegistry.NewRegistry())
-	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 	handler := NewTaskStatusHandler(orch, testLogger)
 
 	task := tasks.NewTask("print", []byte(`{"message":"test"}`))
@@ -351,7 +351,7 @@ func TestTaskStatusHandler_ContentType(t *testing.T) {
 	reg.Register("print", handlers.NewPrintHandler(testLogger))
 	runner := runners.NewSynchronousRunner(reg)
 	taskStore := store.NewMemoryTaskStore()
-	orch := orchestrator.NewOrchestrator(taskStore, runner, testLogger)
+	orch := orchestrator.NewDefaultOrchestrator(taskStore, runner, testLogger)
 
 	// Submit a task
 	task, err := orch.SubmitTask("print", []byte(`{"message":"test"}`))

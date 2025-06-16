@@ -6,13 +6,16 @@ import (
 	"task-orchestrator/errors"
 	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
+	execution "task-orchestrator/tasks/orchestrator/execution"
 	"task-orchestrator/tasks/runners"
 	"task-orchestrator/tasks/store"
 )
 
-// Orchestrator defines the contract for task orchestration services.
+// Orchestrator provides a high-level API for task management.
+// It coordinates task lifecycle without handling execution complexity.
 type Orchestrator interface {
-	// SubmitTask creates and executes a new task from the provided type and payload.
+	// SubmitTask accepts user requests and ensures they are processed immediately.
+	// Returns the task even on execution failure to allow status inspection.
 	SubmitTask(taskType string, payload json.RawMessage) (*tasks.Task, error)
 
 	// GetTask retrieves a task by ID from the underlying storage.
@@ -23,27 +26,37 @@ type Orchestrator interface {
 	GetTaskStatus(taskID string) (string, error)
 }
 
-// orchestrator is the single implementation that uses different runner strategies.
-// The behavior changes based on which runner is injected (sync, async, distributed, etc.)
+// orchestrator separates API concerns from execution complexity.
+// This enables different execution strategies without changing the public interface.
 type orchestrator struct {
-	store  store.TaskStore
-	runner runners.Runner
-	logger *logger.Logger
+	store    store.TaskStore
+	workflow execution.ExecutionWorkflow
+	logger   *logger.Logger
 }
 
+// Compile-time interface compliance check
 var _ Orchestrator = (*orchestrator)(nil)
 
-// NewOrchestrator constructs a new orchestrator with the specified runner strategy.
-// The runner determines whether execution is synchronous, asynchronous, distributed, etc.
-func NewOrchestrator(store store.TaskStore, runner runners.Runner, lg *logger.Logger) Orchestrator {
+// NewDefaultOrchestrator creates an orchestrator with defaults.
+// Uses dependency injection to enable testing and future configuration flexibility.
+func NewDefaultOrchestrator(
+	store store.TaskStore,
+	runner runners.Runner,
+	logger *logger.Logger,
+) Orchestrator {
+	// Compose the execution workflow with default components
+	stateManager := execution.NewDefaultStateManager(store, logger)
+	resultHandler := execution.NewDefaultResultHandler()
+	workflow := execution.NewDefaultExecutionWorkflow(runner, stateManager, resultHandler, logger)
+
 	return &orchestrator{
-		store:  store,
-		runner: runner,
-		logger: lg,
+		store:    store,
+		workflow: workflow,
+		logger:   logger,
 	}
 }
 
-// SubmitTask creates and executes a new task using the configured runner strategy.
+// SubmitTask creates and persists a task. It delegates execution to execution module.
 func (o *orchestrator) SubmitTask(taskType string, payload json.RawMessage) (*tasks.Task, error) {
 	task := tasks.NewTask(taskType, payload)
 
@@ -57,79 +70,21 @@ func (o *orchestrator) SubmitTask(taskType string, payload json.RawMessage) (*ta
 
 	o.logger.Task(task.ID, "task submitted", map[string]any{
 		"task_type":    task.Type,
-		"runner_type":  fmt.Sprintf("%T", o.runner),
 		"payload_size": len(task.Payload),
 	})
 
-	return task, o.executeTask(task)
+	// Delegate execution
+	if err := o.executeTask(task); err != nil {
+		// Task execution failed, but we still return the task with its current state
+		return task, err
+	}
+
+	return task, nil
 }
 
-// executeTask handles the execution using the configured runner strategy.
+// executeTask handles the execution using the configured workflow.
 func (o *orchestrator) executeTask(task *tasks.Task) error {
-	if err := task.SetStatus(tasks.StatusRunning); err != nil {
-		return err
-	}
-
-	if err := o.store.Update(task.ID, task.Status, task.Result); err != nil {
-		o.logger.Task("failed to update running status", task.ID, map[string]any{
-			"error": err.Error(),
-		})
-		// Continue execution even if store update fails
-	}
-
-	// Delegate to runner strategy
-	// This is where the behavior changes based on the injected runner
-	if err := o.runner.Run(task); err != nil {
-		o.logger.Task(task.ID, "execution failed", map[string]any{
-			"error": err.Error(),
-		})
-
-		if setErr := task.SetStatus(tasks.StatusFailed); setErr != nil {
-			o.logger.Error("failed to set task status to failed", map[string]any{
-				"task_id": task.ID,
-				"error":   setErr.Error(),
-			})
-		}
-
-		// Set failure result if handler didn't set one
-		if task.Result == "" {
-			if taskErr, ok := errors.IsTaskError(err); ok {
-				task.Result = fmt.Sprintf("task %s: %s", taskErr.Type, taskErr.Message)
-			} else {
-				task.Result = fmt.Sprintf("execution failed: %s", err.Error())
-			}
-		}
-
-		// Update store with failure
-		if updateErr := o.store.Update(task.ID, task.Status, task.Result); updateErr != nil {
-			o.logger.Task("failed to update task failure state", task.ID, map[string]any{
-				"update_error":   updateErr.Error(),
-				"original_error": err.Error(),
-			})
-		}
-
-		return err
-	}
-
-	// handles success
-	if err := task.SetStatus(tasks.StatusDone); err != nil {
-		return err
-	}
-
-	// Update final state
-	if err := o.store.Update(task.ID, task.Status, task.Result); err != nil {
-		o.logger.Task("failed to update final task state", task.ID, map[string]any{
-			"error":        err.Error(),
-			"final_status": task.Status.String(),
-		})
-		// the task exec was succesful, what failed was the update. We continue.
-	}
-
-	o.logger.Task(task.ID, "task completed", map[string]any{
-		"status": task.Status.String(),
-	})
-
-	return nil
+	return o.workflow.Execute(task)
 }
 
 // GetTask retrieves a task by ID from the store.
