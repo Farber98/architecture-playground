@@ -3,14 +3,15 @@ package execution
 import (
 	"fmt"
 	"task-orchestrator/errors"
+	taskContext "task-orchestrator/tasks/context"
 )
 
 // ResultHandler standardizes result formatting across different execution strategies.
 // This abstraction enables custom result processing for specific task types
 // without coupling execution logic to result formatting details.
 type ResultHandler interface {
-	HandleSuccess(execCtx *ExecutionContext)
-	HandleFailure(execCtx *ExecutionContext)
+	HandleSuccess(execCtx *taskContext.ExecutionContext)
+	HandleFailure(execCtx *taskContext.ExecutionContext)
 }
 
 // DefaultResultHandler provides result formatting with minimal assumptions.
@@ -24,7 +25,7 @@ func NewDefaultResultHandler() *DefaultResultHandler {
 
 // HandleSuccess finalizes successful execution without overriding business logic results.
 // Task handlers are responsible for setting meaningful results during execution.
-func (h *DefaultResultHandler) HandleSuccess(execCtx *ExecutionContext) {
+func (h *DefaultResultHandler) HandleSuccess(execCtx *taskContext.ExecutionContext) {
 	execCtx.SetSuccess()
 	// Task result should already be set by handler
 	// Nothing additional needed for success case
@@ -32,7 +33,7 @@ func (h *DefaultResultHandler) HandleSuccess(execCtx *ExecutionContext) {
 
 // HandleFailure provides informative error messages while respecting existing results.
 // Only sets fallback messages when handlers haven't provided specific error details.
-func (h *DefaultResultHandler) HandleFailure(execCtx *ExecutionContext) {
+func (h *DefaultResultHandler) HandleFailure(execCtx *taskContext.ExecutionContext) {
 	// Only set result if handler didn't set one
 	// Format domain-specific errors with structured information for debugging
 	if execCtx.Task.Result == "" {

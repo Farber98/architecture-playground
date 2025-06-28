@@ -7,6 +7,7 @@ import (
 	"errors"
 	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
+	taskContext "task-orchestrator/tasks/context"
 	"task-orchestrator/tasks/orchestrator"
 	"task-orchestrator/tasks/runners"
 	"task-orchestrator/tasks/store"
@@ -22,15 +23,15 @@ type fakeRunner struct {
 	errorMsg   string
 }
 
-func (r *fakeRunner) Run(ctx context.Context, task *tasks.Task) error {
+func (r *fakeRunner) Run(ctx context.Context, execCtx *taskContext.ExecutionContext) error {
 	if r.shouldFail {
 		// Just set error result and return error - let orchestrator handle status
-		task.Result = r.errorMsg
+		execCtx.Task.Result = r.errorMsg
 		return errors.New(r.errorMsg)
 	}
 
 	// Just set success result - let orchestrator handle status
-	task.Result = "executed successfully"
+	execCtx.Task.Result = "executed successfully"
 	return nil
 }
 
@@ -641,12 +642,12 @@ type fakeRunnerNoResult struct {
 	errorMsg   string
 }
 
-func (r *fakeRunnerNoResult) Run(ctx context.Context, task *tasks.Task) error {
+func (r *fakeRunnerNoResult) Run(ctx context.Context, execCtx *taskContext.ExecutionContext) error {
 	if r.shouldFail {
 		// Don't set task.Result - let orchestrator handle it
 		return errors.New(r.errorMsg)
 	}
 
-	task.Result = "executed successfully"
+	execCtx.Task.Result = "executed successfully"
 	return nil
 }

@@ -1,5 +1,10 @@
-test:
+test-integration:
+	go test -tags=integration ./... -v -timeout=30s
+
+test-unit:
 	go test -race -cover -count=1 ./...
+
+test: test-unit test-integration
 
 run:
 	LOG_LEVEL=DEBUG PORT=8080 go run cmd/task-orchestrator/main.go
@@ -49,4 +54,4 @@ test-given-status:
 	echo "🔍 Checking status for task: $$TASK_ID"; \
 	curl -s -X GET http://localhost:8080/tasks/$$TASK_ID/status | jq '.'
 
-.PHONY: test run test-print test-sleep test-health load-test test-status test-given-status
+.PHONY: test run test-print test-sleep test-health load-test test-status test-given-status test-integration test-unit

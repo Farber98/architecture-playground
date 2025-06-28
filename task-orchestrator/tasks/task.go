@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -13,6 +14,7 @@ type TaskStatus string
 
 const (
 	StatusSubmitted TaskStatus = "submitted"
+	StatusQueued    TaskStatus = "queued"
 	StatusRunning   TaskStatus = "running"
 	StatusDone      TaskStatus = "done"
 	StatusFailed    TaskStatus = "failed"
@@ -37,10 +39,11 @@ func (s TaskStatus) IsActive() bool {
 func (s TaskStatus) canTransitionTo(target TaskStatus) error {
 	// Define valid state transitions
 	validTransitions := map[TaskStatus][]TaskStatus{
-		StatusSubmitted: {StatusRunning, StatusFailed}, // Can start running or fail during setup
-		StatusRunning:   {StatusDone, StatusFailed},    // Can complete or fail during execution
-		StatusDone:      {},                            // Terminal state - no transitions
-		StatusFailed:    {},                            // Terminal state - no transitions
+		StatusSubmitted: {StatusRunning, StatusQueued, StatusFailed}, // V1 can start running, V2 can go to queue
+		StatusQueued:    {StatusRunning, StatusFailed},               // V2: From queue to processing or failure
+		StatusRunning:   {StatusDone, StatusFailed},                  // Can complete or fail during execution
+		StatusDone:      {},                                          // Terminal state - no transitions
+		StatusFailed:    {},                                          // Terminal state - no transitions
 	}
 
 	allowed, exists := validTransitions[s]
@@ -75,16 +78,23 @@ type Task struct {
 	// Result holds the outcome of task execution as a user-readable message.
 	// This is populated by the handler once the task has completed.
 	Result string `json:"result"`
+
+	// timing information for queueing
+	SubmittedAt time.Time  `json:"submitted_at"`
+	QueuedAt    *time.Time `json:"queued_at,omitempty"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
 // NewTask creates a new task with the submitted status
 func NewTask(taskType string, payload json.RawMessage) *Task {
 	return &Task{
-		ID:      uuid.New().String(),
-		Type:    taskType,
-		Payload: payload,
-		Status:  StatusSubmitted,
-		Result:  "",
+		ID:          uuid.New().String(),
+		Type:        taskType,
+		Payload:     payload,
+		Status:      StatusSubmitted,
+		Result:      "",
+		SubmittedAt: time.Now(),
 	}
 }
 

@@ -3,7 +3,7 @@ package runners
 import (
 	"context"
 	"task-orchestrator/errors"
-	"task-orchestrator/tasks"
+	taskContext "task-orchestrator/tasks/context"
 	handlerRegistry "task-orchestrator/tasks/registry"
 )
 
@@ -22,20 +22,20 @@ func NewSynchronousRunner(r *handlerRegistry.HandlerRegistry) *SynchronousRunner
 	return &SynchronousRunner{registry: r}
 }
 
-func (r *SynchronousRunner) Run(ctx context.Context, task *tasks.Task) error {
-	handler, ok := r.registry.Get(task.Type)
+func (r *SynchronousRunner) Run(ctx context.Context, execCtx *taskContext.ExecutionContext) error {
+	handler, ok := r.registry.Get(execCtx.Task.Type)
 	if !ok {
-		return errors.NewNotFoundError("no handler registered for task type: " + task.Type)
+		return errors.NewNotFoundError("no handler registered for task type: " + execCtx.Task.Type)
 	}
 
-	if err := handler.Run(ctx, task); err != nil {
+	if err := handler.Run(ctx, execCtx.Task); err != nil {
 		// Preserve structured errors, wrap others as execution errors
 		if _, ok := errors.IsTaskError(err); ok {
 			return err
 		}
 		return errors.NewExecutionError("task execution failed", map[string]any{
-			"task_id":   task.ID,
-			"task_type": task.Type,
+			"task_id":   execCtx.Task.ID,
+			"task_type": execCtx.Task.Type,
 			"error":     err.Error(),
 		})
 	}

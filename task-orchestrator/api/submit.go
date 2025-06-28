@@ -7,6 +7,7 @@ import (
 	"task-orchestrator/errors"
 	"task-orchestrator/logger"
 	"task-orchestrator/tasks/orchestrator"
+	"time"
 )
 
 const (
@@ -30,15 +31,22 @@ type submitRequest struct {
 
 // SubmitResponse defines the JSON response returned after executing a Task.
 type SubmitResponse struct {
-	TaskID string `json:"task_id"`
-	Status string `json:"status"`
-	Result string `json:"result"`
+	TaskID      string     `json:"task_id"`
+	Status      string     `json:"status"`
+	Result      string     `json:"result"`
+	QueuedAt    *time.Time `json:"queued_at,omitempty"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
 // NewSubmitHandler returns an HTTP handler that processes task submissions.
 //
-// This handler is synchronous — it calls the Runner immediately and returns the task result.
-// It assumes that the runner handles task routing, lifecycle management, and logging.
+// This handler supports both synchronous and asynchronous execution modes.
+// The execution mode is determined by the orchestrator's configured runner:
+// - Synchronous runners execute immediately and return final results
+// - Asynchronous runners queue tasks and return task IDs for later polling
+//
+// Response includes appropriate timestamps and result data based on execution state.
 func NewSubmitHandler(orch orchestrator.Orchestrator, lg *logger.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -98,9 +106,12 @@ func NewSubmitHandler(orch orchestrator.Orchestrator, lg *logger.Logger) http.Ha
 		}
 
 		resp := SubmitResponse{
-			TaskID: task.ID,
-			Status: task.Status.String(),
-			Result: task.Result,
+			TaskID:      task.ID,
+			Status:      task.Status.String(),
+			Result:      task.Result,
+			QueuedAt:    task.QueuedAt,
+			StartedAt:   task.StartedAt,
+			CompletedAt: task.CompletedAt,
 		}
 
 		w.Header().Set("Content-Type", "application/json")

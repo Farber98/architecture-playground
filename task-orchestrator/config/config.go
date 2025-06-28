@@ -15,6 +15,12 @@ type Config struct {
 	LogLevel        string        `json:"log_level"`
 	ShutdownTimeout time.Duration `json:"shutdown_timeout"`
 	Version         string        `json:"version"`
+
+	// V2
+	Async       bool   `json:"async"` // Enable V2 async processing
+	RedisURL    string `json:"redis_url"`
+	WorkerCount int    `json:"worker_count"` // Number of background workers
+	QueueName   string `json:"queue_name"`   // Redis queue name
 }
 
 // LoadConfig loads configuration from environment variables with sensible defaults
@@ -25,6 +31,10 @@ func LoadConfig() (*Config, error) {
 		TaskTimeout:     getEnvDuration("TASK_TIMEOUT", 30*time.Second),
 		ShutdownTimeout: getEnvDuration("SHUTDOWN_TIMEOUT", 15*time.Second),
 		Version:         getEnvString("VERSION", "1.0.0"),
+		Async:           getEnvBool("ASYNC_MODE", false),
+		RedisURL:        getEnvString("REDIS_URL", "redis://localhost:6379"),
+		WorkerCount:     getEnvInt("WORKER_COUNT", 3),
+		QueueName:       getEnvString("QUEUE_NAME", "tasks"),
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -59,6 +69,15 @@ func getEnvInt(key string, defaultValue int) int {
 func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 	if value := os.Getenv(key); value != "" {
 		if parsed, err := time.ParseDuration(value); err == nil {
+			return parsed
+		}
+	}
+	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := strconv.ParseBool(value); err == nil {
 			return parsed
 		}
 	}
@@ -103,6 +122,18 @@ func (c *Config) validate() error {
 		return fmt.Errorf("version cannot be empty")
 	}
 	c.Version = strings.TrimSpace(c.Version)
+
+	if c.Async {
+		if c.WorkerCount < 1 {
+			return fmt.Errorf("worker count must be at least 1 when async mode is enabled")
+		}
+		if strings.TrimSpace(c.RedisURL) == "" {
+			return fmt.Errorf("redis URL cannot be empty when async mode is enabled")
+		}
+		if strings.TrimSpace(c.QueueName) == "" {
+			return fmt.Errorf("queue name cannot be empty when async mode is enabled")
+		}
+	}
 
 	return nil
 }

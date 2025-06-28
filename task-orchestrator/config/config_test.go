@@ -379,3 +379,118 @@ func TestLoadConfig_EnvParsingFallbacks(t *testing.T) {
 	assert.Equal(t, "INFO", cfg.LogLevel)
 	assert.Equal(t, "1.0.0", cfg.Version)
 }
+
+func TestLoadConfig_AsyncDefaults(t *testing.T) {
+	os.Clearenv()
+
+	cfg, err := LoadConfig()
+
+	assert.NilError(t, err)
+	// Async should be disabled by default
+	assert.Equal(t, false, cfg.Async)
+	assert.Equal(t, "redis://localhost:6379", cfg.RedisURL)
+	assert.Equal(t, 3, cfg.WorkerCount)
+	assert.Equal(t, "tasks", cfg.QueueName)
+}
+
+func TestLoadConfig_AsyncFromEnvironment(t *testing.T) {
+	// Set async environment variables
+	os.Setenv("ASYNC_MODE", "true")
+	os.Setenv("REDIS_URL", "redis://production:6379/0")
+	os.Setenv("WORKER_COUNT", "5")
+	os.Setenv("QUEUE_NAME", "production-tasks")
+
+	defer func() {
+		os.Clearenv()
+	}()
+
+	cfg, err := LoadConfig()
+
+	assert.NilError(t, err)
+	assert.Equal(t, true, cfg.Async)
+	assert.Equal(t, "redis://production:6379/0", cfg.RedisURL)
+	assert.Equal(t, 5, cfg.WorkerCount)
+	assert.Equal(t, "production-tasks", cfg.QueueName)
+}
+
+func TestLoadConfig_AsyncValidation_Success(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("ASYNC_MODE", "true")
+	os.Setenv("REDIS_URL", "redis://localhost:6379")
+	os.Setenv("WORKER_COUNT", "3")
+	os.Setenv("QUEUE_NAME", "tasks")
+
+	defer os.Clearenv()
+
+	cfg, err := LoadConfig()
+
+	assert.NilError(t, err)
+	assert.Equal(t, true, cfg.Async)
+}
+
+func TestLoadConfig_AsyncValidation_InvalidWorkerCount(t *testing.T) {
+	tests := []struct {
+		name        string
+		workerCount string
+	}{
+		{"zero workers", "0"},
+		{"negative workers", "-1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Clearenv()
+			os.Setenv("ASYNC_MODE", "true")
+			os.Setenv("WORKER_COUNT", tt.workerCount)
+			defer os.Clearenv()
+
+			cfg, err := LoadConfig()
+
+			assert.Assert(t, cfg == nil)
+			assert.Assert(t, err != nil)
+			assert.Assert(t, strings.Contains(err.Error(), "worker count must be at least 1"))
+		})
+	}
+}
+
+func TestLoadConfig_AsyncValidation_EmptyRedisURL(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("ASYNC_MODE", "true")
+	os.Setenv("REDIS_URL", "   ") // Just spaces
+	defer os.Clearenv()
+
+	cfg, err := LoadConfig()
+
+	assert.Assert(t, cfg == nil)
+	assert.Assert(t, err != nil)
+	assert.Assert(t, strings.Contains(err.Error(), "redis URL cannot be empty"))
+}
+
+func TestLoadConfig_AsyncValidation_EmptyQueueName(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("ASYNC_MODE", "true")
+	os.Setenv("QUEUE_NAME", "   ")
+	defer os.Clearenv()
+
+	cfg, err := LoadConfig()
+
+	assert.Assert(t, cfg == nil)
+	assert.Assert(t, err != nil)
+	assert.Assert(t, strings.Contains(err.Error(), "queue name cannot be empty"))
+}
+
+func TestLoadConfig_AsyncValidation_SyncModeIgnoresAsyncFields(t *testing.T) {
+	// When async is disabled, async-specific validation should not apply
+	os.Clearenv()
+	os.Setenv("ASYNC_MODE", "false")
+	os.Setenv("WORKER_COUNT", "0") // Invalid for async, but OK for sync
+	os.Setenv("REDIS_URL", "")     // Invalid for async, but OK for sync
+	os.Setenv("QUEUE_NAME", "")    // Invalid for async, but OK for sync
+	defer os.Clearenv()
+
+	cfg, err := LoadConfig()
+
+	// Should succeed because async is disabled
+	assert.NilError(t, err)
+	assert.Equal(t, false, cfg.Async)
+}

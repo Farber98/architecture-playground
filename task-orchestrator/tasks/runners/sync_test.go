@@ -8,8 +8,10 @@ import (
 	"task-orchestrator/errors"
 	"task-orchestrator/logger"
 	"task-orchestrator/tasks"
+	taskContext "task-orchestrator/tasks/context"
 	"task-orchestrator/tasks/handlers"
 	handlerRegistry "task-orchestrator/tasks/registry"
+
 	"task-orchestrator/tasks/runners"
 	"testing"
 
@@ -27,13 +29,11 @@ func TestSynchronousRunner_Run_WithRegisteredHandler(t *testing.T) {
 
 	runner := runners.NewSynchronousRunner(reg)
 
-	// Use NewTask to create task with proper initial status
+	// Create task and wrap in execution context
 	task := tasks.NewTask("print", json.RawMessage(`{"message":"Hello from runner test"}`))
-
-	// Simulate orchestrator setting task to running before calling runner
 	require.NoError(t, task.SetStatus(tasks.StatusRunning))
-
-	err := runner.Run(context.Background(), task)
+	execCtx := taskContext.NewExecutionContext(task)
+	err := runner.Run(context.Background(), execCtx)
 
 	require.NoError(t, err)
 	// Handler should have set the result, but status management is orchestrator's job
@@ -47,13 +47,10 @@ func TestSynchronousRunner_Run_UnregisteredType(t *testing.T) {
 	reg := handlerRegistry.NewRegistry()
 	runner := runners.NewSynchronousRunner(reg)
 
-	// Use NewTask to create task with proper initial status
 	task := tasks.NewTask("unknown", json.RawMessage(`{}`))
-
-	// Simulate orchestrator setting task to running before calling runner
 	require.NoError(t, task.SetStatus(tasks.StatusRunning))
-
-	err := runner.Run(context.Background(), task)
+	execCtx := taskContext.NewExecutionContext(task)
+	err := runner.Run(context.Background(), execCtx)
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "no handler registered")
@@ -116,13 +113,10 @@ func TestSynchronousRunner_Run_HandlerReturnsTaskError(t *testing.T) {
 	})
 	runner := runners.NewSynchronousRunner(reg)
 
-	// Use NewTask to create task with proper initial status
 	task := tasks.NewTask("failing", json.RawMessage(`{}`))
-
-	// Simulate orchestrator setting task to running before calling runner
 	require.NoError(t, task.SetStatus(tasks.StatusRunning))
-
-	err := runner.Run(context.Background(), task)
+	execCtx := taskContext.NewExecutionContext(task)
+	err := runner.Run(context.Background(), execCtx)
 
 	require.Error(t, err)
 
@@ -151,13 +145,10 @@ func TestSynchronousRunner_Run_HandlerReturnsGenericError(t *testing.T) {
 	})
 	runner := runners.NewSynchronousRunner(reg)
 
-	// Use NewTask to create task with proper initial status
 	task := tasks.NewTask("erroring-task", json.RawMessage(`{"erroring":"task"}`))
-
-	// Simulate orchestrator setting task to running before calling runner
 	require.NoError(t, task.SetStatus(tasks.StatusRunning))
-
-	err := runner.Run(context.Background(), task)
+	execCtx := taskContext.NewExecutionContext(task)
+	err := runner.Run(context.Background(), execCtx)
 
 	require.Error(t, err)
 
@@ -187,13 +178,10 @@ func TestSynchronousRunner_Run_HandlerSetsResult(t *testing.T) {
 	})
 	runner := runners.NewSynchronousRunner(reg)
 
-	// Use NewTask to create task with proper initial status
 	task := tasks.NewTask("success", json.RawMessage(`{"test":"data"}`))
-
-	// Simulate orchestrator setting task to running before calling runner
 	require.NoError(t, task.SetStatus(tasks.StatusRunning))
-
-	err := runner.Run(context.Background(), task)
+	execCtx := taskContext.NewExecutionContext(task)
+	err := runner.Run(context.Background(), execCtx)
 
 	require.NoError(t, err)
 
